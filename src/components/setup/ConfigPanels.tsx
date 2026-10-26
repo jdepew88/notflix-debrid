@@ -29,11 +29,20 @@ function Loading() {
 // Server and storage
 
 interface ServerView {
-  server: { port: number; allowLan: boolean; hostname: string; reverseProxy: boolean; publicUrl: string; effectiveBindAddress: string };
+  server: { port: number; allowLan: boolean; hostname: string; reverseProxy: boolean; publicUrl: string; effectiveBindAddress: string; name: string; advertise: boolean; effectiveName: string };
   storage: { cacheDirectory: string; cacheMaxGiB: number; dataDir: string };
   engine: { port: number };
   listening: { host: string; port: number; pending?: { host: string; port: number; error: string } | null } | null;
   lanAddresses: string[];
+  advertisement: { active: boolean; name: string | null; port: number | null; addresses: string[]; reason: string | null; error: string | null } | null;
+}
+
+function advertisementText(view: ServerView): string | null {
+  const a = view.advertisement;
+  if (!a) return null;
+  if (a.active) return `Announced on your network as "${a.name}" (port ${a.port}, ${a.addresses.join(", ")}).`;
+  if (a.error) return `Not announced: ${a.error}. TVs can still connect by address.`;
+  return null;
 }
 
 function isLocalHostname(h: string) {
@@ -56,7 +65,7 @@ async function waitForOrigin(origin: string, timeoutMs = 20_000): Promise<boolea
 
 export function ServerPanel({ mode, onSaved }: PanelProps) {
   const [view, setView] = useState<ServerView | null>(null);
-  const [form, setForm] = useState({ port: "", hostname: "", allowLan: false, reverseProxy: false, publicUrl: "", cacheDirectory: "", cacheMaxGiB: "" });
+  const [form, setForm] = useState({ port: "", hostname: "", allowLan: false, reverseProxy: false, publicUrl: "", cacheDirectory: "", cacheMaxGiB: "", name: "", advertise: true });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<{ tone: "ok" | "warn" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -76,6 +85,8 @@ export function ServerPanel({ mode, onSaved }: PanelProps) {
       publicUrl: data.server.publicUrl,
       cacheDirectory: data.storage.cacheDirectory,
       cacheMaxGiB: String(data.storage.cacheMaxGiB),
+      name: data.server.name,
+      advertise: data.server.advertise,
     });
   }, []);
 
@@ -100,6 +111,8 @@ export function ServerPanel({ mode, onSaved }: PanelProps) {
       publicUrl: form.reverseProxy ? form.publicUrl.trim() : "",
       cacheDirectory: form.cacheDirectory.trim(),
       cacheMaxGiB: Number(form.cacheMaxGiB),
+      name: form.name.trim(),
+      advertise: form.advertise,
     };
     const { ok, data } = await api<ServerView & { applied?: { listenChanged: boolean; restartRequired: string[] } }>("/api/config/server", { method: "PUT", body });
     if (!ok) {
@@ -160,6 +173,20 @@ export function ServerPanel({ mode, onSaved }: PanelProps) {
           }
         />
         {leavingLan && <Notice tone="warn">You are connected from another device. After saving, this browser will lose access; continue on the server itself.</Notice>}
+        {form.allowLan && (
+          <>
+            <Toggle
+              id="srv-advertise"
+              label="Let TVs find this server automatically"
+              checked={form.advertise}
+              onChange={(v) => set({ advertise: v })}
+              description={`Announces Notflix on your local network (mDNS / Bonjour), so the Notflix TV app lists it without typing an address. Only the name, port ${port} and a random server ID are announced, never accounts or credentials. Needs Node.js allowed through the Windows firewall on private networks.${advertisementText(view) ? ` ${advertisementText(view)}` : ""}`}
+            />
+            <Field id="srv-name" label="Name shown on TVs (optional)" error={errors.name} hint={`Leave empty to use this computer's name (${view.server.effectiveName}).`}>
+              <input id="srv-name" className={fieldClass} value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder={view.server.effectiveName} maxLength={60} autoComplete="off" aria-invalid={Boolean(errors.name)} />
+            </Field>
+          </>
+        )}
         <Toggle
           id="srv-proxy"
           label="Notflix is behind a reverse proxy"

@@ -85,6 +85,7 @@ export function installPaths(dataDir) {
     engineSecretFile: path.join(root, "secrets", "engine-secret"),
     setupCodeFile: path.join(root, "setup-code.txt"),
     listenStatusFile: path.join(root, "run", "listen-status.json"),
+    advertiseStatusFile: path.join(root, "run", "advertise-status.json"),
   };
 }
 

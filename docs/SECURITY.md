@@ -65,6 +65,15 @@ Settings → Accounts.
 
 Notflix **never** opens ports on your router (no UPnP) and never configures internet exposure.
 
+With LAN access on, Notflix announces itself on the local network (mDNS/DNS-SD, `_notflix._tcp`)
+so TV apps can find it. The announcement and the public `GET /api/health` contain only the name
+shown on TVs, the web port, `api`/`scheme` hints and a random instance ID: no credentials, account
+names, paths, settings or the media engine's port. It tells devices on your network where Notflix
+is, which LAN access already makes reachable; it grants no access (sign-in is still required) and
+does not travel beyond the local network. Clients must treat it as untrusted: anything on the LAN
+can announce `_notflix._tcp` or answer `/api/health` like Notflix. Turn it off in Settings or with
+`notflix-cli advertise off`. Details: [LAN-DISCOVERY.md](LAN-DISCOVERY.md).
+
 The traffic between browsers and Notflix is plain HTTP unless you put an HTTPS reverse proxy in
 front. On a home network that is common practice; on any network you do not trust it is not —
 passwords and session cookies could be observed.

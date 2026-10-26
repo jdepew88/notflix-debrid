@@ -8,7 +8,8 @@
   start     Start the media engine and the web server, wait until both are healthy, open the browser.
   stop      Stop both (gracefully, then forcefully after a timeout).
   restart   stop + start.
-  status    Health, addresses, data folder, hardware summary.
+  status    Health, addresses, data folder, LAN discovery (checked live on the network).
+  discover  List the Notflix servers announced on the local network (mDNS/DNS-SD).
   logs      Show the end of each log file.
   test      Run the unit test suites (engine + web). -Integration adds a fresh-install run with real
             FFmpeg/hardware on throwaway data; -Browser adds the Playwright suite.
@@ -24,7 +25,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Position = 0)]
-  [ValidateSet("setup", "start", "stop", "restart", "status", "logs", "test", "move-data", "accounts")]
+  [ValidateSet("setup", "start", "stop", "restart", "status", "discover", "logs", "test", "move-data", "accounts")]
   [string]$Command = "status",
   # Use the Next.js development server (live reload) instead of the production build.
   [switch]$Dev,
@@ -254,6 +255,8 @@ function Stop-Component($runDir, $name, [switch]$Graceful) {
     & taskkill.exe /PID $p.Id /T /F | Out-Null
   }
   Remove-Item (Get-PidFile $runDir $name) -ErrorAction SilentlyContinue
+  # A forced stop can't send its mDNS goodbye or tidy up; the records expire within two minutes.
+  if ($name -eq "web") { Remove-Item (Join-Path $runDir "advertise-status.json") -ErrorAction SilentlyContinue }
   Write-Ok "Stopped $name (PID $($p.Id))"
 }
 
@@ -325,7 +328,7 @@ function Invoke-Stop {
   if ($was) { Write-Ok "Notflix stopped" } else { Write-Ok "Notflix was not running" }
 }
 
-function Show-Status {
+function Show-Status([switch]$Live) {
   $s = (Invoke-Cli @("status")) | ConvertFrom-Json
   Write-Step "Status"
   Write-Host "  Data folder:  $($s.dataDir)"
@@ -337,7 +340,33 @@ function Show-Status {
     $lan = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" }).IPAddress
     if ($lan) { Write-Host "  Other devices: $(($lan | ForEach-Object { "http://$($_):$($s.webPort)" }) -join '  ')" }
   } else { Write-Host "  Network:      this computer only (enable LAN access in Settings)" }
+  Show-Discovery $s $webUp -Live:$Live
   Write-Host "  Setup:        $(if ($s.setupComplete) { 'complete' } else { 'not finished - open /setup' })"
+}
+
+# LAN discovery (mDNS/DNS-SD). server.mjs reports what it announces; -Live also asks the network,
+# the way a TV would, and checks that this installation answers with the right port.
+function Show-Discovery($s, [bool]$webUp, [switch]$Live) {
+  $a = $s.advertisement
+  # Right after a start the server may still be checking that its name is free (about a second).
+  for ($n = 0; $n -lt 8 -and $webUp -and -not $a; $n++) { Start-Sleep -Milliseconds 500; $a = ((Invoke-Cli @("status")) | ConvertFrom-Json).advertisement }
+  if (-not $webUp -or -not $a) {
+    if ($webUp) { Write-Warn2 "LAN discovery  unknown (the web server did not report it; restart Notflix)" }
+    else { Write-Host "  LAN discovery: not announced (Notflix is not running)" }
+    return
+  }
+  if ($a.active) {
+    Write-Ok "LAN discovery  announced as `"$($a.name)`" ($($a.serviceType -replace '\.local$', ''), port $($a.port), $($a.addresses -join ', '))"
+    if ($Live) {
+      $found = @((Invoke-Cli @("discover", "--json", "--timeout", "2000")) | ConvertFrom-Json)
+      $mine = @($found | Where-Object { $_.txt.id -eq $s.instanceId })
+      $ports = @($mine | ForEach-Object { $_.port } | Select-Object -Unique)
+      if ($mine.Count -eq 0) { Write-Warn2 "LAN discovery  no answer to a test query on this computer (multicast blocked? see docs/LAN-DISCOVERY.md)" }
+      elseif ($ports.Count -ne 1 -or $ports[0] -ne $a.port) { Write-Warn2 "LAN discovery  answers with port(s) $($ports -join ', ') instead of $($a.port)" }
+      else { Write-Ok "LAN discovery  answers test queries (port $($ports[0]); $(@($found | ForEach-Object { $_.name } | Select-Object -Unique).Count) Notflix server(s) on the network)" }
+    }
+  } elseif ($a.error) { Write-Warn2 "LAN discovery  not announced: $($a.error). TVs can still connect by address." }
+  else { Write-Host "  LAN discovery: off ($($a.reason))" }
 }
 
 function Invoke-Tests {
@@ -418,7 +447,8 @@ try {
     "start" { Invoke-Start }
     "stop" { Invoke-Stop }
     "restart" { Invoke-Stop; Invoke-Start }
-    "status" { Show-Status }
+    "status" { Show-Status -Live }
+    "discover" { & node $Cli discover @Rest; exit $LASTEXITCODE }
     "logs" {
       $i = Get-Install
       Get-ChildItem $i.logsDir -Filter *.log | ForEach-Object { Write-Host "--- $($_.Name)" -ForegroundColor Cyan; Get-Content $_.FullName -Tail 25 }

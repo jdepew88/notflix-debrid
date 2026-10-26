@@ -119,6 +119,11 @@ network**. Notflix then shows the address to use (e.g. `http://192.168.1.20:8420
 whether Node.js may communicate on **private** networks — allow private, not public. Notflix never
 opens ports on your router. The media engine always stays private to this computer.
 
+While LAN access is on, Notflix also **announces itself on the network** (mDNS/DNS-SD), so the
+Notflix TV app lists it automatically, with the right port, under the name set in **Name shown on
+TVs** (default: this computer's name). Turn it off with **Let TVs find this server automatically**.
+Details, firewall and router requirements: [LAN-DISCOVERY.md](LAN-DISCOVERY.md).
+
 ### Starting automatically
 
 To start Notflix when you sign in, put a shortcut to `Start-Notflix.cmd` in `shell:startup`
@@ -163,3 +168,4 @@ the program folder, so updates keep them.
 | **Engine exits right away** | `scripts\notflix.ps1 logs`; look at `media-engine.err.log`. |
 | **Forgot the owner password** | `Stop-Notflix.cmd`, then `powershell -ExecutionPolicy Bypass -File scripts\notflix.ps1 accounts reset-password <owner name>` prints a temporary password. |
 | **Locked yourself out of LAN access** | On the server computer: `node scripts\notflix-cli.mjs allow-lan on`. |
+| **The TV app doesn't find the server** | `scripts\notflix.ps1 status` must show `LAN discovery  announced as …` and `answers test queries`. If it does, the network is blocking multicast between TV and PC (guest Wi-Fi, client isolation, VLANs, VPN), or Windows Firewall blocks Node.js on UDP 5353, or the network is set to *Public*. Enter the address on the TV instead (e.g. `192.168.1.20`; the app tries port 8420, then 4119). See [LAN-DISCOVERY.md](LAN-DISCOVERY.md). |

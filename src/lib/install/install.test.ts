@@ -7,6 +7,7 @@ import { DEFAULT_WEB_PORT, bindAddressFor, normalizeServerConfig, readEngineConf
 import { ensureInstallSecrets, readEngineSecret, readSecrets, rotateSecretsKey, secretHint, secretsStatus, updateSecrets } from "./secrets.mjs";
 import { initializeInstall, readSetupCode } from "./init.mjs";
 import { withFileLock } from "./store.mjs";
+import { instanceId } from "./identity.mjs";
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "notflix-install-"));
 afterAll(() => fs.rmSync(scratch, { recursive: true, force: true }));
@@ -70,6 +71,27 @@ describe("server config", () => {
     expect(cfg.setup.completed).toBe(false);
     expect(cfg.accounts.allowSignup).toBe(false);
     expect(cfg.debrid.sources).toEqual({ torrentio: true, peerflix: false, custom: false });
+  });
+
+  it("keeps the LAN announcement settings of existing installations working", () => {
+    const data = fresh("cfg-advertise");
+    // A config written before these settings existed: announced (while LAN access is on) under the computer's name.
+    const old = normalizeServerConfig({ server: { port: 8420, allowLan: true } }, data);
+    expect(old.server).toMatchObject({ port: 8420, allowLan: true, name: "", advertise: true });
+    const cfg = normalizeServerConfig({ server: { name: "  Den.PC ", advertise: "no" } }, data);
+    expect(cfg.server.name).toBe("Den PC");
+    expect(cfg.server.advertise).toBe(true);
+    expect(normalizeServerConfig({ server: { advertise: false } }, data).server.advertise).toBe(false);
+    expect(normalizeServerConfig({ server: { name: 42 } }, data).server.name).toBe("");
+  });
+
+  it("gives every data folder one stable random instance ID", () => {
+    const data = fresh("cfg-instance");
+    initializeInstall(data);
+    const id = instanceId(data);
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(instanceId(data)).toBe(id);
+    expect(instanceId(fresh("cfg-instance-other"))).not.toBe(id);
   });
 
   it("listens on loopback only until LAN access is allowed", () => {
