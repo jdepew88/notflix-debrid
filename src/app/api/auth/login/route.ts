@@ -16,24 +16,26 @@ import {
 const LOGIN_ACCOUNT_WIDE = { max: 20, windowMs: 15 * 60_000 };
 const INVALID = "Incorrect username or password.";
 
-function publicUrl(request: NextRequest, path: string): URL {
-  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
-  const host = forwardedHost || request.headers.get("host");
-  const proto = (
-    request.headers.get("x-forwarded-proto") || request.nextUrl.protocol.replace(":", "")
-  )
-    .split(",")[0]
-    .trim();
-  if (host) return new URL(path, `${proto}://${host}`);
-  return new URL(path, request.url);
+// Relative Location: the redirect never depends on Host or X-Forwarded-* headers a client controls.
+function seeOther(location: string, init?: ResponseInit): NextResponse {
+  const res = new NextResponse(null, { ...init, status: 303 });
+  res.headers.set("Location", location);
+  return res;
 }
+
+// The no-JavaScript fallback only carries a short code; the login page maps it to fixed text, so a
+// crafted link cannot make the page display arbitrary wording.
+const ERROR_CODES: Record<string, string> = {
+  [INVALID]: "invalid",
+  "Enter your username and password.": "missing",
+};
 
 export async function POST(request: NextRequest) {
   const contentType = request.headers.get("content-type") ?? "";
   const formPost = !contentType.includes("application/json");
   const fail = (message: string, status: number, extra?: ResponseInit) =>
     formPost
-      ? NextResponse.redirect(publicUrl(request, `/?error=${encodeURIComponent(message)}`), 303)
+      ? seeOther(`/?error=${status === 429 ? "rate_limited" : ERROR_CODES[message] ?? "failed"}`)
       : NextResponse.json({ error: message }, { status, ...extra });
 
   try {
@@ -78,7 +80,7 @@ export async function POST(request: NextRequest) {
 
     const token = await createSessionToken(user.id, { version: user.sessionVersion ?? 0, remember });
     const response = formPost
-      ? NextResponse.redirect(publicUrl(request, "/profiles"), 303)
+      ? seeOther("/profiles")
       : NextResponse.json({ user: { id: user.id, name: user.name, role: roleOf(user) } });
     response.cookies.set(sessionCookieOptions(token, request, { remember }));
     // A new sign-in always starts at "Who's watching?".

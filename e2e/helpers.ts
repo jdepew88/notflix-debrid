@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { APIRequestContext, Page } from "@playwright/test";
+import { readSecrets } from "../src/lib/install/secrets.mjs";
 
 /**
  * Same format as src/lib/session.ts: userId.exp.hmacHex. Needs the test server's data folder
@@ -10,7 +11,8 @@ import type { APIRequestContext, Page } from "@playwright/test";
 export function forgeSessionToken(userId: string): string {
   const data = process.env.E2E_DATA_PATH;
   if (!data) throw new Error("E2E_DATA_PATH is required to forge session tokens");
-  const secret = JSON.parse(fs.readFileSync(path.join(data, "secrets", "secrets.json"), "utf8")).sessionSecret as string;
+  // The store is encrypted (DPAPI on Windows); the test runs as the same account as the server.
+  const secret = readSecrets(data).sessionSecret;
   const payload = `${userId}.${Date.now() + 3_600_000}`;
   const sig = crypto.createHmac("sha256", secret).update(payload).digest("hex");
   return `${payload}.${sig}`;

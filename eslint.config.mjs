@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Sample media (MPEG-TS files share the .ts extension) and build outputs of the engine.
+    "test-media/**",
+    "services/**",
   ]),
 ]);
 

@@ -717,6 +717,7 @@ export interface InstallSummary {
     urls: { local: string; lan: string[]; hostname: string | null; public: string | null };
   };
   storage: { dataDir: string; cacheDirectory: string; cacheMaxGiB: number };
+  credentials?: { protection: string; state: string; label: string };
   owner: { name: string; displayName: string | null } | null;
   metadata: { tmdb: { configured: boolean; validatedAt: string | null } };
   debrid: { provider: string; configured: boolean; validatedAt: string | null; account: string | null; sources: Record<string, boolean> };
@@ -742,6 +743,7 @@ export function SummaryList({ summary }: { summary: InstallSummary }) {
     ],
     ["Media cache", `${summary.storage.cacheDirectory} (up to ${summary.storage.cacheMaxGiB} GB)`],
     ["Data folder", summary.storage.dataDir],
+    ...(summary.credentials ? [["Stored credentials", summary.credentials.label] as [string, string]] : []),
   ];
   return (
     <dl className="divide-y divide-white/10 text-sm" data-testid="setup-summary">

@@ -10,6 +10,9 @@
  *   placeholder, and catalog/details tests will fail against TMDB (reported, not hidden),
  * - Real-Debrid: NOTFLIX_TEST_RD_TOKEN when set, else a placeholder (playback of real titles is
  *   then only covered by the self-test samples).
+ * - --credentials-from <data folder>: instead of the variables, reuse the TMDB/Real-Debrid
+ *   credentials an owner entered through onboarding in another installation of this edition. They
+ *   are decrypted and re-encrypted in-process (same Windows account) and never printed.
  * Never point --data at a real installation.
  */
 import fs from "node:fs";
@@ -18,7 +21,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { initializeInstall, removeSetupCode } from "../src/lib/install/init.mjs";
 import { ensureEngineLibraryRoot, updateEngineConfig, updateServerConfig } from "../src/lib/install/config.mjs";
-import { updateSecrets } from "../src/lib/install/secrets.mjs";
+import { readSecrets, updateSecrets } from "../src/lib/install/secrets.mjs";
 import { installPaths } from "../src/lib/install/paths.mjs";
 import { writeJsonAtomic } from "../src/lib/install/store.mjs";
 
@@ -51,8 +54,12 @@ writeJsonAtomic(path.join(installPaths(dataDir).dbDir, "users.json"), {
 });
 removeSetupCode(dataDir);
 
-const tmdb = process.env.NOTFLIX_TEST_TMDB_KEY?.trim();
-const rd = process.env.NOTFLIX_TEST_RD_TOKEN?.trim();
+const from = opt("--credentials-from");
+const borrowed = from ? readSecrets(path.resolve(from)) : null;
+if (from && path.resolve(from).toLowerCase() === path.resolve(dataDir).toLowerCase()) throw new Error("--credentials-from must be another folder");
+if (from && !borrowed?.tmdbApiKey) throw new Error(`no readable TMDB credential in ${from}`);
+const tmdb = borrowed?.tmdbApiKey || process.env.NOTFLIX_TEST_TMDB_KEY?.trim();
+const rd = borrowed?.realDebridToken || process.env.NOTFLIX_TEST_RD_TOKEN?.trim();
 updateSecrets(dataDir, { tmdbApiKey: tmdb || "PLACEHOLDER-TMDB-KEY", realDebridToken: rd || "PLACEHOLDERREALDEBRIDTOKEN000000" });
 const now = new Date().toISOString();
 updateServerConfig(dataDir, (c) => {

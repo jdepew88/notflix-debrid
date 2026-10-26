@@ -29,8 +29,12 @@ export default function LoginPage() {
     const params = new URLSearchParams(window.location.search);
     const queryError = params.get("error");
     // Messages from the no-JavaScript form post fallback.
-    if (queryError === "invalid") setError("Incorrect username or password.");
-    else if (queryError) setError(queryError.slice(0, 200));
+    const messages: Record<string, string> = {
+      invalid: "Incorrect username or password.",
+      missing: "Enter your username and password.",
+      rate_limited: "Too many attempts. Wait a few minutes and try again.",
+    };
+    if (queryError) setError(messages[queryError] ?? "Sign-in failed. Try again.");
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {

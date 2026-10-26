@@ -7,6 +7,7 @@ import crypto from "node:crypto";
 import { installPaths } from "./paths.mjs";
 import { readServerConfig, updateEngineConfig, updateServerConfig } from "./config.mjs";
 import { ensureInstallSecrets } from "./secrets.mjs";
+import { defaultProtection, protectionLabel } from "./protect.mjs";
 import { readJson, restrictToOwner } from "./store.mjs";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O, 1/I
@@ -59,7 +60,14 @@ export function initializeInstall(dataDir) {
     else fs.writeFileSync(marker, new Date().toISOString() + "\n");
   }
 
-  ensureInstallSecrets(dataDir);
+  const sec = ensureInstallSecrets(dataDir);
+  if (sec.recovered) {
+    warnings.push(
+      `Stored credentials could not be decrypted (${sec.recovered}). They were kept aside as secrets.json.undecryptable-*; ` +
+        "sign in again and re-enter the TMDB and Real-Debrid credentials in Settings."
+    );
+  }
+  if (sec.migrated) warnings.push(`Stored credentials re-saved with: ${protectionLabel(defaultProtection())}.`);
   if (created) updateServerConfig(dataDir, () => {});
   if (!fs.existsSync(p.engineConfigFile)) updateEngineConfig(dataDir, {});
 

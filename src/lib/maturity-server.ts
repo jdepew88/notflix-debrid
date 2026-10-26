@@ -11,6 +11,7 @@ const TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const cache = new Map<string, { at: number; cert: string | null }>();
 const inflight = new Map<string, Promise<string | null>>();
 const CONCURRENCY = 6;
+const MAX_ENTRIES = 20_000;
 
 type Media = "movie" | "tv";
 
@@ -39,6 +40,8 @@ export async function getCertification(apiKey: string, id: number, media: Media)
   const task = fetchCertification(apiKey, id, media)
     .then((cert) => {
       cache.set(key, { at: Date.now(), cert });
+      // Bounded: drop the oldest entries (Map keeps insertion order).
+      if (cache.size > MAX_ENTRIES) for (const k of [...cache.keys()].slice(0, cache.size - MAX_ENTRIES)) cache.delete(k);
       return cert;
     })
     // A failed lookup counts as "unknown" (hidden for restricted profiles) and is not cached.

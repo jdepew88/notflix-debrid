@@ -29,7 +29,16 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_BUILD_COMMIT: buildCommit(),
   },
   allowedDevOrigins: devOrigins(),
+  // The data cache stays in memory (bounded by cacheMaxMemorySize). On disk it would keep request
+  // URLs, and TMDB v3 keys travel as a query parameter, so the key would land in clear text in
+  // .next/cache/fetch-cache, outside the encrypted credential store.
+  cacheMaxMemorySize: 64 * 1024 * 1024,
+  experimental: {
+    isrFlushToDisk: false,
+  },
   images: {
+    // Optimized TMDB artwork is disposable; cap it instead of Next's default of half the free disk.
+    maximumDiskCacheSize: 512 * 1024 * 1024,
     // TMDB artwork paths are content-addressed (a new image gets a new path), so cache optimized copies for 31 days.
     minimumCacheTTL: 2678400,
     remotePatterns: [

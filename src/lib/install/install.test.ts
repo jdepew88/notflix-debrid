@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { DATA_DIR_POINTER, cacheDirProblem, defaultDataDir, installPaths, resolveDataDir } from "./paths.mjs";
 import { DEFAULT_WEB_PORT, bindAddressFor, normalizeServerConfig, readEngineConfig, readServerConfig, updateEngineConfig, updateServerConfig } from "./config.mjs";
-import { ensureInstallSecrets, readEngineSecret, readSecrets, secretHint, updateSecrets } from "./secrets.mjs";
+import { ensureInstallSecrets, readEngineSecret, readSecrets, rotateSecretsKey, secretHint, secretsStatus, updateSecrets } from "./secrets.mjs";
 import { initializeInstall, readSetupCode } from "./init.mjs";
 import { withFileLock } from "./store.mjs";
 
@@ -100,12 +100,12 @@ describe("secrets", () => {
   it("are generated once, never regenerated, and kept out of the config folder", () => {
     const data = fresh("secrets");
     const first = ensureInstallSecrets(data);
-    expect(first).toEqual({ createdSession: true, createdEngine: true });
+    expect(first).toMatchObject({ createdSession: true, createdEngine: true, recovered: null });
     const session = readSecrets(data).sessionSecret;
     const engine = readEngineSecret(data);
     expect(session.length).toBeGreaterThanOrEqual(40);
     expect(engine.length).toBeGreaterThanOrEqual(32);
-    expect(ensureInstallSecrets(data)).toEqual({ createdSession: false, createdEngine: false });
+    expect(ensureInstallSecrets(data)).toEqual({ createdSession: false, createdEngine: false, migrated: false, recovered: null });
     expect(readSecrets(data).sessionSecret).toBe(session);
     updateSecrets(data, { realDebridToken: "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345" });
     expect(readSecrets(data).sessionSecret).toBe(session);
@@ -115,6 +115,88 @@ describe("secrets", () => {
     expect(configText).not.toContain("ABCDEFGHIJKLMNOPQRSTUVWXYZ012345");
     expect(secretHint("ABCDEFGHIJKLMNOPQRSTUVWXYZ012345")).toBe("…2345");
     expect(secretHint("")).toBe("");
+  });
+});
+
+// Real DPAPI on Windows (the test runs as a normal user account); other systems store plaintext
+// with owner-only permissions, which these tests also cover.
+describe("credential encryption at rest", () => {
+  const win = process.platform === "win32";
+  const TOKEN = "RDTOKENVALUE0123456789ABCDEFGHIJKLMNOP";
+  const KEY = "tmdbkeyvalue0123456789abcdef0123";
+  const file = (data: string) => installPaths(data).secretsFile;
+
+  it("never writes credential values in clear text and reads them back", () => {
+    const data = fresh("enc-basic");
+    ensureInstallSecrets(data);
+    updateSecrets(data, { tmdbApiKey: KEY, realDebridToken: TOKEN });
+    const disk = fs.readFileSync(file(data), "utf8");
+    const status = secretsStatus(data);
+    if (win) {
+      expect(status).toMatchObject({ protection: "dpapi-user", state: "ok" });
+      expect(disk).not.toContain(TOKEN);
+      expect(disk).not.toContain(KEY);
+      expect(disk).not.toContain(readSecrets(data).sessionSecret);
+    } else {
+      expect(status.protection).toBe("none");
+    }
+    expect(readSecrets(data)).toMatchObject({ tmdbApiKey: KEY, realDebridToken: TOKEN });
+  });
+
+  it("encrypts a phase-1 plaintext store on start, keeping every value", () => {
+    const data = fresh("enc-migrate");
+    fs.mkdirSync(installPaths(data).secretsDir, { recursive: true });
+    fs.writeFileSync(file(data), JSON.stringify({ sessionSecret: "legacy-session-secret-0123456789abcdef", tmdbApiKey: KEY, realDebridToken: TOKEN, customSourceUrl: "" }));
+    expect(secretsStatus(data).protection).toBe("plaintext-legacy");
+    const r = ensureInstallSecrets(data);
+    expect(r.migrated).toBe(win);
+    expect(readSecrets(data)).toMatchObject({ sessionSecret: "legacy-session-secret-0123456789abcdef", tmdbApiKey: KEY, realDebridToken: TOKEN });
+    if (win) expect(fs.readFileSync(file(data), "utf8")).not.toContain(TOKEN);
+  });
+
+  it("rotates a credential and rotates the key without losing other values", () => {
+    const data = fresh("enc-rotate");
+    ensureInstallSecrets(data);
+    updateSecrets(data, { tmdbApiKey: KEY, realDebridToken: TOKEN });
+    const session = readSecrets(data).sessionSecret;
+    updateSecrets(data, { realDebridToken: "NEWTOKEN" + TOKEN.slice(8) });
+    expect(readSecrets(data)).toMatchObject({ tmdbApiKey: KEY, realDebridToken: "NEWTOKEN" + TOKEN.slice(8), sessionSecret: session });
+    if (!win) return;
+    const before = JSON.parse(fs.readFileSync(file(data), "utf8")).wrappedKey;
+    rotateSecretsKey(data);
+    const after = JSON.parse(fs.readFileSync(file(data), "utf8")).wrappedKey;
+    expect(after).not.toBe(before);
+    expect(readSecrets(data)).toMatchObject({ tmdbApiKey: KEY, sessionSecret: session });
+  });
+
+  it.runIf(win)("keeps a store it cannot decrypt aside and starts clean (recovery)", () => {
+    const data = fresh("enc-recover");
+    ensureInstallSecrets(data);
+    updateSecrets(data, { realDebridToken: TOKEN });
+    // Simulates a data folder restored under another Windows account: the wrapped key is not ours.
+    const f = JSON.parse(fs.readFileSync(file(data), "utf8"));
+    f.wrappedKey = Buffer.from("not a dpapi blob from this account").toString("base64");
+    fs.writeFileSync(file(data), JSON.stringify(f));
+    expect(secretsStatus(data).state).toBe("undecryptable");
+    expect(readSecrets(data).realDebridToken).toBe("");
+    const r = ensureInstallSecrets(data);
+    expect(r.recovered).toBeTruthy();
+    expect(secretsStatus(data).state).toBe("ok");
+    expect(readSecrets(data).sessionSecret.length).toBeGreaterThan(30);
+    expect(readSecrets(data).realDebridToken).toBe("");
+    const kept = fs.readdirSync(installPaths(data).secretsDir).filter((n) => n.startsWith("secrets.json.undecryptable-"));
+    expect(kept).toHaveLength(1);
+  });
+
+  it.runIf(win)("detects a tampered ciphertext", () => {
+    const data = fresh("enc-tamper");
+    ensureInstallSecrets(data);
+    const f = JSON.parse(fs.readFileSync(file(data), "utf8"));
+    const bytes = Buffer.from(f.data, "base64");
+    bytes[0] ^= 1;
+    f.data = bytes.toString("base64");
+    fs.writeFileSync(file(data), JSON.stringify(f));
+    expect(secretsStatus(data).state).toBe("undecryptable");
   });
 });
 

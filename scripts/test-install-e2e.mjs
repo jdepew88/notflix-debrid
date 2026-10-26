@@ -24,6 +24,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { readSecrets, secretsStatus, updateSecrets } from "../src/lib/install/secrets.mjs";
 
 const argv = process.argv.slice(2);
 const opt = (name, fallback) => {
@@ -152,8 +153,10 @@ async function setupPhase() {
   check("real TMDB rejects an invalid key; not stored", tmdb.status === 400 && tmdb.data.tmdb?.configured === false, tmdb.data.error);
   const rd = await owner.json("PUT", "/api/config/debrid", { token: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOP" });
   check("real Real-Debrid rejects an invalid token; not stored", rd.status === 400 && rd.data.configured === false, rd.data.error);
-  const secrets = fs.readFileSync(path.join(dataDir, "secrets", "secrets.json"), "utf8");
-  check("rejected credentials absent from the secret store", !secrets.includes("0123456789abcdef0123456789abcdef") && !secrets.includes("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"));
+  const stored = readSecrets(dataDir);
+  check("rejected credentials absent from the secret store", !stored.tmdbApiKey && !stored.realDebridToken);
+  const status = secretsStatus(dataDir);
+  check("credential store encrypted at rest", process.platform !== "win32" || (status.protection === "dpapi-user" && status.state === "ok"), status.label);
 
   console.log("\n# 3. Hardware (real detection on this machine)");
   const hw = await owner.json("GET", "/api/config/hardware?refresh=1");
@@ -173,10 +176,9 @@ async function setupPhase() {
   const incomplete = await owner.json("POST", "/api/setup/complete", {});
   check("completion refused while TMDB/Real-Debrid are missing", incomplete.status === 409, (incomplete.data.missing ?? []).map((m) => m.id).join(","));
   // Placeholder credentials + validation markers, written the way the server stores them.
-  const sec = JSON.parse(secrets);
-  sec.tmdbApiKey = "SIMULATED-TMDB-KEY-NOT-REAL";
-  sec.realDebridToken = "SIMULATEDREALDEBRIDTOKENNOTREAL0000";
-  fs.writeFileSync(path.join(dataDir, "secrets", "secrets.json"), JSON.stringify(sec, null, 2));
+  updateSecrets(dataDir, { tmdbApiKey: "SIMULATED-TMDB-KEY-NOT-REAL", realDebridToken: "SIMULATEDREALDEBRIDTOKENNOTREAL0000" });
+  const onDisk = fs.readFileSync(path.join(dataDir, "secrets", "secrets.json"), "utf8");
+  check("credentials not readable in the file on disk", process.platform !== "win32" || (!onDisk.includes("SIMULATED-TMDB") && !onDisk.includes("SIMULATEDREALDEBRID")));
   const cfgFile = path.join(dataDir, "config", "server.json");
   const cfg = JSON.parse(fs.readFileSync(cfgFile, "utf8"));
   cfg.metadata.tmdbValidatedAt = new Date().toISOString();
@@ -265,6 +267,10 @@ async function restartPhase() {
   check("server settings persisted", srv.server?.hostname === "media-pc.local" && srv.storage?.cacheMaxGiB === 15);
   const hw = (await owner.json("GET", "/api/config/hardware")).data;
   check("hardware settings persisted", hw.settings?.maxConcurrentTranscodes === 2);
+  const creds = readSecrets(dataDir);
+  check("encrypted credentials readable after restart", creds.tmdbApiKey === "SIMULATED-TMDB-KEY-NOT-REAL" && creds.realDebridToken.startsWith("SIMULATEDREALDEBRID"));
+  const summary = (await owner.json("GET", "/api/config/summary")).data;
+  check("summary reports the protection, no values", /DPAPI|permissions/.test(summary.summary?.credentials?.label ?? summary.credentials?.label ?? "") && !JSON.stringify(summary).includes("SIMULATED"));
   const me = (await owner.json("GET", "/api/auth/me")).data;
   check("profiles persisted", (me.state?.profiles ?? []).length >= 2, (me.state?.profiles ?? []).map((p) => p.name).join(", "));
   const member = new Client();

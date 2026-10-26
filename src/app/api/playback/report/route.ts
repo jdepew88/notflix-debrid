@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/auth";
 import { getDataPath } from "@/lib/data-path";
 
+const MAX_REPORT_BYTES = 10 * 1024 * 1024;
+
 /** Strips anything that looks like a URL or token before a report is stored. */
 function scrub(value: unknown, depth = 0): unknown {
   if (depth > 8) return null;
@@ -39,6 +41,12 @@ export async function POST(request: NextRequest) {
   }
   const file = path.join(getDataPath(), "playback-reports.jsonl");
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  // Bounded: keep the current file and one previous generation (at most ~2 × MAX_REPORT_BYTES).
+  try {
+    if (fs.statSync(file).size > MAX_REPORT_BYTES) fs.renameSync(file, `${file}.1`);
+  } catch {
+    /* no file yet */
+  }
   fs.appendFileSync(file, JSON.stringify({ at: new Date().toISOString(), user: userId, report: scrub(body) }) + "\n");
   return NextResponse.json({ ok: true });
 }

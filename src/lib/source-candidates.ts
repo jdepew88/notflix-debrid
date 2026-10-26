@@ -73,6 +73,7 @@ export async function resolveDebridLink(streamUrl: string, token: string, season
   // Torrentio answers uncached torrents with its own "downloading…" placeholder video.
   if (!isDebridCdn(url)) throw new NotCachedError("This release is not cached on Real-Debrid yet.");
   linkCache.set(key, { url, at: Date.now() });
+  if (linkCache.size > 2000) for (const [k, v] of linkCache) if (Date.now() - v.at > LINK_TTL_MS) linkCache.delete(k);
   return url;
 }
 

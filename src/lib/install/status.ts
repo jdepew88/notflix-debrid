@@ -6,7 +6,7 @@ import { bindAddressFor } from "./config.mjs";
 import { dataDir, paths, secrets, serverConfig } from "./runtime";
 import { hasOwner, listUsers } from "../users";
 import { debridProvider, enabledSourceAddons } from "../debrid";
-import { secretHint } from "./secrets.mjs";
+import { secretHint, secretsStatus } from "./secrets.mjs";
 
 /** Subset of the engine's /capabilities response the web app relies on. */
 export interface EngineCapabilities {
@@ -157,6 +157,7 @@ export async function installSummary(opts: { refreshEngine?: boolean } = {}) {
       urls: { local, lan, hostname: cfg.server.hostname ? `http://${cfg.server.hostname}:${port}` : null, public: cfg.server.publicUrl || null },
     },
     storage: { dataDir: dataDir(), ...cfg.storage },
+    credentials: (({ protection, state, label }) => ({ protection, state, label }))(secretsStatus(dataDir())),
     owner: owner ? { name: owner.name, displayName: owner.displayName ?? null } : null,
     metadata: { tmdb: { configured: Boolean(sec.tmdbApiKey), hint: secretHint(sec.tmdbApiKey), validatedAt: cfg.metadata.tmdbValidatedAt } },
     debrid: {

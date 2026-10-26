@@ -10,6 +10,9 @@
 //   node scripts/notflix-cli.mjs accounts list
 //   node scripts/notflix-cli.mjs accounts reset-password <username>   prints a temporary password
 //   node scripts/notflix-cli.mjs accounts set-role <username> admin|user
+//   node scripts/notflix-cli.mjs credentials status          how stored credentials are protected (no values)
+//   node scripts/notflix-cli.mjs credentials rotate-key      re-encrypt them under a new key
+//   node scripts/notflix-cli.mjs credentials clear           forget TMDB/Real-Debrid/addon credentials
 //
 // The data directory is NOTFLIX_DATA_DIR, else the folder chosen with move-data, else the OS default
 // (%ProgramData%\NotflixDebrid on Windows). Pass --data-dir <folder> to override for one command.
@@ -20,6 +23,7 @@ import { fileURLToPath } from "node:url";
 import { DATA_DIR_POINTER, installPaths, resolveDataDir } from "../src/lib/install/paths.mjs";
 import { bindAddressFor, ensureEngineLibraryRoot, readEngineConfig, readServerConfig, updateServerConfig, validPort } from "../src/lib/install/config.mjs";
 import { initializeInstall, readSetupCode } from "../src/lib/install/init.mjs";
+import { readSecrets, rotateSecretsKey, secretsStatus, updateSecrets } from "../src/lib/install/secrets.mjs";
 import { readJson, restrictToOwner, withFileLock, writeFileAtomic, writeJsonAtomic } from "../src/lib/install/store.mjs";
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -104,6 +108,46 @@ async function accounts([sub, name, value]) {
     }
     default:
       fail("usage: accounts list | reset-password <name> | set-role <name> admin|user");
+  }
+}
+
+// --- Credentials (values are never printed) ------------------------------------------------------
+function credentials([sub]) {
+  switch (sub) {
+    case "status": {
+      const status = secretsStatus(dataDir);
+      const values = readSecrets(dataDir);
+      const out = {
+        ...status,
+        tmdb: Boolean(values.tmdbApiKey),
+        realDebrid: Boolean(values.realDebridToken),
+        customSource: Boolean(values.customSourceUrl),
+      };
+      if (json) console.log(JSON.stringify(out));
+      else {
+        console.log(`${status.label} — ${status.state}${status.detail ? ` (${status.detail})` : ""}`);
+        console.log(`TMDB: ${out.tmdb ? "stored" : "not set"}; Real-Debrid: ${out.realDebrid ? "stored" : "not set"}; custom source: ${out.customSource ? "stored" : "not set"}`);
+      }
+      return;
+    }
+    case "rotate-key": {
+      if (secretsStatus(dataDir).state === "undecryptable") fail("the stored credentials cannot be decrypted; use \"credentials clear\" and re-enter them");
+      const status = rotateSecretsKey(dataDir);
+      console.log(`Credentials re-encrypted under a new key. ${status.label}.`);
+      return;
+    }
+    case "clear": {
+      updateSecrets(dataDir, { tmdbApiKey: "", realDebridToken: "", customSourceUrl: "" });
+      updateServerConfig(dataDir, (c) => {
+        c.metadata.tmdbValidatedAt = null;
+        c.debrid.validatedAt = null;
+        c.debrid.account = null;
+      });
+      console.log("TMDB, Real-Debrid and custom source credentials removed. Sign in as the owner and enter them in Settings.");
+      return;
+    }
+    default:
+      fail("usage: credentials status | rotate-key | clear");
   }
 }
 
@@ -213,7 +257,10 @@ switch (command) {
   case "accounts":
     await accounts(rest);
     break;
+  case "credentials":
+    credentials(rest);
+    break;
   default:
-    console.log(fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 16).map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
+    console.log(fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 19).map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
     process.exit(command ? 1 : 0);
 }

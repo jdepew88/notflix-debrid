@@ -39,6 +39,8 @@ param(
   [switch]$Integration,
   # test: also run the Playwright browser suite on a throwaway, pre-configured instance.
   [switch]$Browser,
+  # test -Browser: reuse the TMDB/Real-Debrid credentials of this (onboarded) data folder.
+  [string]$CredentialsFrom = "",
   [Parameter(ValueFromRemainingArguments = $true)]
   [string[]]$Rest
 )
@@ -290,16 +292,19 @@ function Invoke-Tests {
       $dir = Join-Path $env:TEMP ("notflix-e2e-" + [Guid]::NewGuid().ToString("N").Substring(0, 8))
       Write-Step "Browser suite (Playwright, throwaway pre-configured instance: $dir)"
       $env:SIGNUP_RATE_LIMIT = "100000"
-      $i = Start-Throwaway $dir { & node (Join-Path $Root "scripts\prepare-test-instance.mjs") --data $dir --web-port 8529 --engine-port 8528 | Out-Null }
+      $prep = @((Join-Path $Root "scripts\prepare-test-instance.mjs"), "--data", $dir, "--web-port", "8529", "--engine-port", "8528")
+      if ($CredentialsFrom) { $prep += @("--credentials-from", $CredentialsFrom) }
+      $i = Start-Throwaway $dir { & node @prep | Out-Null; if ($LASTEXITCODE -ne 0) { throw "could not prepare the test instance" } }
       try {
         $env:E2E_BASE_URL = "http://127.0.0.1:$($i.webPort)"
         $env:E2E_DATA_PATH = $dir
+        if ($CredentialsFrom) { $env:E2E_LIVE_DEBRID = "1" }
         & npx playwright test
         if ($LASTEXITCODE -ne 0) { $failed += "playwright" }
       } finally {
         Stop-Component $i.runDir "web" -Graceful
         Stop-Component $i.runDir "engine"
-        Remove-Item Env:E2E_BASE_URL, Env:E2E_DATA_PATH, Env:SIGNUP_RATE_LIMIT -ErrorAction SilentlyContinue
+        Remove-Item Env:E2E_BASE_URL, Env:E2E_DATA_PATH, Env:SIGNUP_RATE_LIMIT, Env:E2E_LIVE_DEBRID -ErrorAction SilentlyContinue
       }
     }
   } finally { Pop-Location }
