@@ -125,6 +125,7 @@ export function installPaths(dataDir) {
     setupCodeFile: path.join(root, "setup-code.txt"),
     listenStatusFile: path.join(root, "run", "listen-status.json"),
     usersFile: path.join(root, "db", "users.json"),
+    advertiseStatusFile: path.join(root, "run", "advertise-status.json"),
   };
 }
 

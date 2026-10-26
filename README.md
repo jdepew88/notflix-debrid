@@ -66,6 +66,7 @@ the wizard step by step: [docs/ONBOARDING.md](docs/ONBOARDING.md).
 | [INSTALL-WINDOWS.md](docs/INSTALL-WINDOWS.md) | Installing, starting, stopping, updating, troubleshooting |
 | [ONBOARDING.md](docs/ONBOARDING.md) | Every setup step explained |
 | [CONFIGURATION.md](docs/CONFIGURATION.md) | Data folder layout, settings files, ports, cache, environment overrides |
+| [LAN-DISCOVERY.md](docs/LAN-DISCOVERY.md) | How TVs find the server automatically (mDNS/DNS-SD); firewall and router requirements |
 | [HARDWARE-ACCELERATION.md](docs/HARDWARE-ACCELERATION.md) | GPU support, how it is tested, fallbacks |
 | [SECURITY.md](docs/SECURITY.md) | Credentials, accounts, network exposure, threat model |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Web app, API, media engine and their contracts; tests |

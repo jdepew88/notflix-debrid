@@ -3,6 +3,7 @@
 import path from "node:path";
 import { installPaths } from "./paths.mjs";
 import { readJson, writeJsonAtomic } from "./store.mjs";
+import { cleanServerName } from "./identity.mjs";
 
 export const DEFAULT_WEB_PORT = 8420;
 export const DEFAULT_ENGINE_PORT = 8421;
@@ -16,7 +17,7 @@ export const SETUP_STEPS = /** @type {const} */ (["server", "owner", "metadata",
 /**
  * @typedef {object} ServerConfig
  * @property {number} version
- * @property {{ port: number, allowLan: boolean, bindAddress: string, hostname: string, reverseProxy: boolean, publicUrl: string }} server
+ * @property {{ port: number, allowLan: boolean, bindAddress: string, hostname: string, reverseProxy: boolean, publicUrl: string, name: string, advertise: boolean }} server
  * @property {{ cacheDirectory: string, cacheMaxGiB: number }} storage
  * @property {{ completed: boolean, completedAt: string | null, ownerCreatedAt: string | null, stepsDone: string[] }} setup
  * @property {{ allowSignup: boolean }} accounts
@@ -37,6 +38,10 @@ export function defaultServerConfig(dataDir) {
       hostname: "",
       reverseProxy: false,
       publicUrl: "",
+      // Friendly name for TVs and apps ("" = this computer's name).
+      name: "",
+      // Announce the server on the local network (mDNS/DNS-SD) while LAN access is on.
+      advertise: true,
     },
     storage: { cacheDirectory: installPaths(dataDir).defaultCacheDir, cacheMaxGiB: DEFAULT_CACHE_GIB },
     setup: { completed: false, completedAt: null, ownerCreatedAt: null, stepsDone: [] },
@@ -85,6 +90,8 @@ export function normalizeServerConfig(raw, dataDir) {
       hostname: validHostname(s.hostname) ? s.hostname : "",
       reverseProxy: bool(s.reverseProxy, d.server.reverseProxy),
       publicUrl: validPublicUrl(s.publicUrl) ? String(s.publicUrl).replace(/\/+$/, "") : "",
+      name: cleanServerName(s.name),
+      advertise: bool(s.advertise, d.server.advertise),
     },
     storage: {
       cacheDirectory: typeof st.cacheDirectory === "string" && path.isAbsolute(st.cacheDirectory) ? path.resolve(st.cacheDirectory) : d.storage.cacheDirectory,

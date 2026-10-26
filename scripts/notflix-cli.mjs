@@ -7,6 +7,9 @@
 //   node scripts/notflix-cli.mjs set-port <port>           change the web port (e.g. after a conflict)
 //   node scripts/notflix-cli.mjs set-engine-port <port>    change the media engine's port (127.0.0.1 only)
 //   node scripts/notflix-cli.mjs allow-lan on|off          allow / forbid other devices on the network
+//   node scripts/notflix-cli.mjs advertise on|off          announce / don't announce on the LAN (mDNS)
+//   node scripts/notflix-cli.mjs set-name [<name>]         name shown on TVs (empty: computer name)
+//   node scripts/notflix-cli.mjs discover [--json]         list Notflix servers announced on the LAN
 //   node scripts/notflix-cli.mjs move-data --to <folder>   move accounts/settings/credentials (Notflix stopped)
 //   node scripts/notflix-cli.mjs accounts list
 //   node scripts/notflix-cli.mjs accounts reset-password <username>   prints a temporary password
@@ -30,6 +33,7 @@ import { bindAddressFor, ensureEngineLibraryRoot, readEngineConfig, readServerCo
 import { InstallUnavailableError, initializeInstall, readSetupCode } from "../src/lib/install/init.mjs";
 import { readSecrets, rotateSecretsKey, secretsStatus, updateSecrets } from "../src/lib/install/secrets.mjs";
 import { readJson, restrictToOwner, withFileLock, writeFileAtomic, writeJsonAtomic } from "../src/lib/install/store.mjs";
+import { MAX_SERVER_NAME, cleanServerName, instanceId, serverName } from "../src/lib/install/identity.mjs";
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -48,7 +52,7 @@ const [command, ...rest] = args;
 const pointerFile = path.join(appRoot, DATA_DIR_POINTER);
 // The remembered folder must still hold this installation (see paths.mjs existingInstallProblem).
 const dataDirProblem = resolved.problem ?? (source === "pointer" ? existingInstallProblem(dataDir) : null);
-if (dataDirProblem && !["paths", "status", "remember-data-dir", "canonical-paths", undefined].includes(command)) {
+if (dataDirProblem && !["paths", "status", "discover", "remember-data-dir", "canonical-paths", undefined].includes(command)) {
   fail(recoveryMessage(dataDir, dataDirProblem), 4);
 }
 
@@ -57,15 +61,24 @@ function fail(message, code = 1) {
   process.exit(code);
 }
 
-function serverRunning() {
-  const status = readJson(p.listenStatusFile, null);
-  if (!status?.pid) return false;
+function alive(pid) {
   try {
-    process.kill(status.pid, 0);
+    process.kill(pid, 0);
     return true;
   } catch {
     return false;
   }
+}
+
+function serverRunning() {
+  const status = readJson(p.listenStatusFile, null);
+  return Boolean(status?.pid) && alive(status.pid);
+}
+
+/** What server.mjs reports about its LAN advertisement; null unless that server is running. */
+function advertisement() {
+  const status = readJson(p.advertiseStatusFile, null);
+  return status?.pid && alive(status.pid) ? status : null;
 }
 
 // --- Accounts (same format as src/lib/users.ts and src/lib/auth.ts) ---------------------------
@@ -254,6 +267,11 @@ switch (command) {
         setupComplete: cfg.setup.completed,
         setupCode: cfg.setup.completed ? null : readSetupCode(dataDir),
         listening: readJson(p.listenStatusFile, null),
+        advertise: cfg.server.advertise,
+        serverName: serverName(cfg),
+        // Read-only for a folder that cannot be opened: never create files in it.
+        instanceId: dataDirProblem ? null : instanceId(dataDir),
+        advertisement: advertisement(),
       })
     );
     break;
@@ -282,6 +300,31 @@ switch (command) {
       c.server.allowLan = rest[0] === "on";
     });
     console.log(rest[0] === "on" ? "Other devices on your network may connect." : "Only this computer may connect.");
+    break;
+  }
+  case "advertise": {
+    if (rest[0] !== "on" && rest[0] !== "off") fail("usage: advertise on|off");
+    updateServerConfig(dataDir, (c) => {
+      c.server.advertise = rest[0] === "on";
+    });
+    console.log(rest[0] === "on" ? "Notflix announces itself on the local network while LAN access is on." : "Notflix no longer announces itself; devices connect by address.");
+    break;
+  }
+  case "set-name": {
+    const name = rest.join(" ").trim();
+    if (name && (cleanServerName(name) !== name || name.length > MAX_SERVER_NAME)) fail(`use up to ${MAX_SERVER_NAME} characters, without dots`);
+    const cfg = updateServerConfig(dataDir, (c) => {
+      c.server.name = name;
+    });
+    console.log(`Server name: ${serverName(cfg)}${name ? "" : " (this computer's name)"}`);
+    break;
+  }
+  case "discover": {
+    const { browse } = await import("../src/lib/install/lan-advertise.mjs");
+    const found = await browse({ timeoutMs: Number(flag("--timeout") ?? 2000) });
+    if (json) console.log(JSON.stringify(found));
+    else if (!found.length) console.log("No Notflix server answered on the local network.");
+    else for (const s of found) console.log(`${s.name}  port ${s.port}  ${s.addresses.join(", ")}  (${Object.entries(s.txt).map(([k, v]) => `${k}=${v}`).join(" ")})`);
     break;
   }
   case "move-data":
@@ -315,6 +358,6 @@ switch (command) {
     console.log(JSON.stringify(rest.map(canonical)));
     break;
   default:
-    console.log(fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 20).map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
+    console.log(fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 23).map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
     process.exit(command ? 1 : 0);
 }

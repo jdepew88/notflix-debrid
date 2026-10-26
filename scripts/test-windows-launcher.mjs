@@ -12,7 +12,12 @@
  *   remembered), status, lost PID records (launcher window closed), stale PID records pointing at
  *   unrelated processes, servers started by an older launcher, two data folders from one app
  *   folder at the same time, two installations at the same time, a remembered data folder that is
- *   unavailable, damaged settings, an explicit new data folder.
+ *   unavailable, damaged settings, an explicit new data folder; LAN discovery (mDNS, _notflix._tcp)
+ *   announced with the actual web port while running, withdrawn on stop, re-announced on restart,
+ *   following a port change, never for the engine port nor an unfinished setup.
+ *
+ * Section 12 turns LAN access on for throwaway installations "Notflix Launcher Test A/B": for a
+ * minute they listen on all interfaces (ports 8561/8565/8571) and are announced on the local network.
  *
  * Safety: every launcher call gets ProgramData pointed at a throwaway folder, so the OS default
  * data folder (%ProgramData%\NotflixDebrid) is never opened; ports 8561-8564 and 8571-8572 only.
@@ -28,6 +33,7 @@ import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { readSecrets, updateSecrets } from "../src/lib/install/secrets.mjs";
 import { updateServerConfig } from "../src/lib/install/config.mjs";
+import { browse } from "../src/lib/install/lan-advertise.mjs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -412,6 +418,63 @@ try {
   await assertOnboarded("after switching back");
   const sp11 = stop(appA, ["-All"]);
   check("stop -All: everything from app A stopped", sp11.code === 0 && services(appA).length === 0);
+
+  section("12. LAN discovery (mDNS) starts, follows and stops with the right installation");
+  const cli = (i, ...a) => execFileSync(process.execPath, [path.join(i.app, "scripts", "notflix-cli.mjs"), ...a, "--data-dir", i.data], { encoding: "utf8", env: { ...process.env, ProgramData: fakeProgramData } });
+  const advStatus = (i) => {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(i.data, "run", "advertise-status.json"), "utf8"));
+    } catch {
+      return null;
+    }
+  };
+  const waitAdv = async (i, ok) => {
+    for (let n = 0; n < 40 && !ok(advStatus(i)); n++) await sleep(250);
+    return advStatus(i);
+  };
+  const idOf = (i) => fs.readFileSync(path.join(i.data, "config", "instance-id"), "utf8").trim();
+  const webOf = (i) => services(i.app).find((p) => p.kind === "web" && p.cmd.includes(i.data));
+  const brief = (s) => JSON.stringify(s && { active: s.active, port: s.port, pid: s.pid, reason: s.reason, error: s.error });
+  // A1 is onboarded; B never finished setup. Both get LAN access (the announcement needs it).
+  for (const [i, name] of [[A1, "Notflix Launcher Test A"], [B, "Notflix Launcher Test B"]]) {
+    cli(i, "allow-lan", "on");
+    cli(i, "set-name", name);
+  }
+  const st12 = start(appA);
+  const a12 = await waitAdv(A1, (s) => s?.active);
+  const idA = idOf(A1);
+  check("start: the web server announces itself on its actual web port", st12.code === 0 && a12?.active === true && a12.port === A1.web && a12.pid === webOf(A1)?.pid, brief(a12));
+  const health = JSON.parse((await http(`http://127.0.0.1:${A1.web}/api/health`)).text || "{}");
+  check("/api/health identity (TV verification contract): ok, service, name, instance ID, API 1", health.ok === true && health.service === "notflix" && health.apiVersion === 1 && health.instanceId === idA && health.name === a12.name, JSON.stringify({ ...health, instanceId: health.instanceId === idA ? "(matches)" : health.instanceId }));
+  let found = await browse({ timeoutMs: 2500 });
+  const mineA = found.filter((s) => s.txt?.id === idA);
+  check("a _notflix._tcp query finds it with the web port and TXT app=notflix api=1 scheme=http", mineA.length > 0 && mineA.every((s) => s.port === A1.web && s.txt.app === "notflix" && s.txt.api === "1" && s.txt.scheme === "http"), JSON.stringify(mineA.map((s) => ({ name: s.name, port: s.port, txt: { ...s.txt, id: "…" } }))));
+  check("no media engine port is announced", !found.some((s) => [A1.engine, A2.engine, B.engine].includes(s.port)), found.map((s) => s.port).join(","));
+  const s12 = status(appA);
+  check("Status-Notflix.cmd: announced, and answers a live query on the web port", /LAN discovery\s+announced as "Notflix Launcher Test A/.test(s12.out) && new RegExp(`answers test queries \\(port ${A1.web};`).test(s12.out), s12.out.match(/LAN discovery[^\n]*/g)?.join(" / "));
+  const st12b = start(appB);
+  const b12 = await waitAdv(B, (s) => s && s.pid === webOf(B)?.pid);
+  const idB = idOf(B);
+  found = await browse({ timeoutMs: 2500 });
+  check("second installation (setup unfinished): running, not announced; A still announced", st12b.code === 0 && b12?.active === false && /setup/.test(b12.reason ?? "") && !found.some((s) => s.txt?.id === idB) && found.some((s) => s.txt?.id === idA && s.port === A1.web), brief(b12));
+  check("stopping B leaves A's announcement alone", stop(appB).code === 0 && advStatus(A1)?.active === true && (await browse({ timeoutMs: 2500 })).some((s) => s.txt?.id === idA));
+  const rs12 = restart(appA);
+  const a12b = await waitAdv(A1, (s) => s?.active && s.pid !== a12.pid);
+  check("restart: re-announced by the new web server, same instance ID and port", rs12.code === 0 && a12b?.active === true && a12b.pid === webOf(A1)?.pid && a12b.port === A1.web && idOf(A1) === idA, brief(a12b));
+  check("…and answers queries again", (await browse({ timeoutMs: 2500 })).some((s) => s.txt?.id === idA && s.port === A1.web));
+  await assertOnboarded("after restart with LAN discovery on");
+  // The owner changes the port while it runs: the server moves and announces the new port.
+  cli(A1, "set-port", "8565");
+  const moved12 = await waitAdv(A1, (s) => s?.active && s.port === 8565);
+  found = await browse({ timeoutMs: 2500 });
+  check("port changed while running: the new web port is announced, the old one withdrawn", moved12?.port === 8565 && found.some((s) => s.txt?.id === idA && s.port === 8565) && !found.some((s) => s.txt?.id === idA && s.port === A1.web), brief(moved12));
+  const sp12 = stop(appA);
+  check("stop (after the port change): stops this installation's processes", sp12.code === 0 && /Notflix stopped/.test(sp12.out) && services(appA).length === 0);
+  check("stop withdraws the announcement (status file gone, no answer)", !advStatus(A1) && !(await browse({ timeoutMs: 2500 })).some((s) => s.txt?.id === idA));
+  cli(A1, "set-port", String(A1.web));
+  const st12c = start(appA);
+  check("start again: announced on the configured port, setup still complete", st12c.code === 0 && (await waitAdv(A1, (s) => s?.active))?.port === A1.web && lastBrowserUrl() === `${base(A1)}/`);
+  check("final stop withdraws it again", stop(appA).code === 0 && !advStatus(A1) && !(await browse({ timeoutMs: 2500 })).some((s) => s.txt?.id === idA));
 } catch (err) {
   check("test ran to completion", false, err instanceof Error ? err.stack : String(err));
 } finally {
