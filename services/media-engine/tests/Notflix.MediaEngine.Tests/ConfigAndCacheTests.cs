@@ -27,6 +27,22 @@ public class EngineConfigTests
     private static Func<string, string?> Env(params (string Key, string Value)[] vars) =>
         key => vars.FirstOrDefault(v => v.Key == key).Value;
 
+    [Theory]
+    [InlineData("0.0.0.0")]
+    [InlineData("192.0.2.10")]
+    [InlineData("::")]
+    [InlineData("not-an-address")]
+    public void Engine_refuses_to_listen_beyond_this_computer(string bind)
+    {
+        using var tmp = new TempDir();
+        var data = DataDir(tmp, json: $"{{\"bindAddress\": \"{bind}\"}}");
+        Assert.Throws<EngineConfigException>(() => EngineConfig.Load(new EngineOptions(), data, Env()));
+        Assert.Throws<EngineConfigException>(() => EngineConfig.Load(new EngineOptions(), DataDir(new TempDir()), Env(("MEDIA_ENGINE_BIND", bind))));
+        var ok = new EngineOptions();
+        EngineConfig.Load(ok, DataDir(new TempDir()), Env(("MEDIA_ENGINE_BIND", "::1")));
+        Assert.Equal("::1", ok.BindAddress);
+    }
+
     private static string DataDir(TempDir tmp, string? secret = Secret, string? json = null)
     {
         var data = tmp.Sub("data");
@@ -59,7 +75,7 @@ public class EngineConfigTests
         using var tmp = new TempDir();
         var cache = tmp.Sub("elsewhere", "cache");
         var data = DataDir(tmp, json: $$"""
-            { "port": 8500, "bindAddress": "0.0.0.0", "cacheDirectory": {{System.Text.Json.JsonSerializer.Serialize(cache)}},
+            { "port": 8500, "bindAddress": "::1", "cacheDirectory": {{System.Text.Json.JsonSerializer.Serialize(cache)}},
               "cacheMaxBytes": 1073741824, "hardwareAcceleration": "amf", "hardwareDevice": null,
               "maxConcurrentVideoTranscodes": 2, "maxTranscodeHeight": 1080, "ffmpegPath": null,
               "libraryRoots": ["D:/Movies"], "allowedPrivateHosts": ["192.0.2.10"], "someFutureField": true, }
@@ -68,7 +84,7 @@ public class EngineConfigTests
         EngineConfig.Load(o, data, Env(("MEDIA_ENGINE_PORT", "8600"), ("MEDIA_ENGINE_HWACCEL", "off")));
         Assert.Equal(8600, o.Port);                // env wins
         Assert.Equal("off", o.HardwareAcceleration); // env wins
-        Assert.Equal("0.0.0.0", o.BindAddress);
+        Assert.Equal("::1", o.BindAddress);
         Assert.Equal(cache, o.CacheDirectory);
         Assert.Equal(System.IO.Path.Combine(cache, "engine"), o.TempDirectory);
         Assert.Equal(1073741824, o.CacheMaxBytes);

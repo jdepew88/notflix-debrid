@@ -200,6 +200,32 @@ export function ServerPanel({ mode, onSaved }: PanelProps) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Getting a credential: a link to the provider's official page plus short steps
+
+export const TMDB_KEY_URL = "https://www.themoviedb.org/settings/api";
+
+/** Opens the provider's own page in a new tab, without giving it a handle on this page. */
+export function CredentialHelp({ testId, href, label, steps }: { testId: string; href: string; label: string; steps: string[] }) {
+  return (
+    <div className="space-y-3 rounded-md bg-white/[0.04] p-4 ring-1 ring-white/10" data-testid={testId}>
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/85"
+      >
+        {label} <ExternalLink className="h-4 w-4" aria-hidden />
+      </a>
+      <ol className="list-decimal space-y-1 pl-5 text-[13px] leading-relaxed text-netflix-light-gray">
+        {steps.map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
 // Metadata (TMDB)
 
 interface MetadataView {
@@ -239,7 +265,7 @@ export function MetadataPanel({ mode, onSaved }: PanelProps) {
     }
     if (action === "save") {
       setKey("");
-      setMessage({ tone: "ok", text: "TMDB connected." });
+      setMessage({ tone: "ok", text: "TMDB accepted the key." });
       onSaved?.();
     } else {
       setMessage({ tone: "ok", text: result.message });
@@ -249,13 +275,20 @@ export function MetadataPanel({ mode, onSaved }: PanelProps) {
   return (
     <div className="space-y-5">
       <Notice>
-        Notflix uses <strong className="text-white">The Movie Database (TMDB)</strong> for the catalog, posters, details, episodes and age ratings. A free key is
-        required. Create one at{" "}
-        <a className="underline hover:text-white" href="https://www.themoviedb.org/settings/api" target="_blank" rel="noreferrer">
-          themoviedb.org/settings/api <ExternalLink className="inline h-3 w-3" />
-        </a>{" "}
-        and paste either the <em>API Key</em> or the <em>API Read Access Token</em>. No other metadata service is needed.
+        Notflix uses <strong className="text-white">The Movie Database (TMDB)</strong> for the catalog, posters, details, episodes and age ratings. A free
+        TMDB key is required; no other information service is needed.
       </Notice>
+      <CredentialHelp
+        testId="tmdb-help"
+        href={TMDB_KEY_URL}
+        label="Get your TMDB API key"
+        steps={[
+          "Sign in to TMDB, or create a free account.",
+          "Open the API settings page (the button above). If TMDB asks, request a free developer key for personal use.",
+          "Copy your API Key, or the longer API Read Access Token. Either works.",
+          "Come back to Notflix and paste it below.",
+        ]}
+      />
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="text-netflix-light-gray">Status:</span>
         {view.tmdb.configured ? (
@@ -376,12 +409,20 @@ export function DebridPanel({ mode, onSaved }: PanelProps) {
   return (
     <div className="space-y-6">
       <Notice>
-        Notflix plays titles through <strong className="text-white">your own {p.name} account</strong>. Paste the {p.credentialLabel} from{" "}
-        <a className="underline hover:text-white" href={p.credentialHelpUrl} target="_blank" rel="noreferrer">
-          {p.credentialHelpUrl.replace(/^https?:\/\//, "")} <ExternalLink className="inline h-3 w-3" />
-        </a>
-        . It stays on this server: browsers, phones and TVs never receive it.
+        Notflix plays titles through <strong className="text-white">your own {p.name} account</strong>. Your {p.credentialLabel} stays on this server:
+        browsers, phones and TVs never receive it.
       </Notice>
+      <CredentialHelp
+        testId="debrid-help"
+        href={p.credentialHelpUrl}
+        label={`Get your ${p.name} ${p.credentialLabel}`}
+        steps={[
+          `Sign in to your ${p.name} account.`,
+          `Open the ${p.credentialLabel} page (the button above).`,
+          "Copy your private token. Treat it like a password.",
+          "Come back to Notflix and paste it below.",
+        ]}
+      />
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="text-netflix-light-gray">Account:</span>
@@ -559,14 +600,28 @@ export function HardwarePanel({ mode, onSaved }: PanelProps) {
     );
   }
 
+  // Plain-language result: what will actually convert video, as tested on this computer.
+  const effectiveBackend = selection && selection.effective !== "software" ? backends.find((b) => b.id === selection.effective) : undefined;
+  const effectiveAdapter = effectiveBackend ? adapters.find((a) => a.vendor === effectiveBackend.vendor) : undefined;
+  const headline = effectiveBackend
+    ? `Notflix will use ${effectiveAdapter?.name ?? effectiveBackend.label} (${effectiveBackend.label}). It was tested on this computer and works.`
+    : verified.length > 0
+      ? "Notflix will use the processor, as chosen below. A tested graphics card is available if you pick Automatic."
+      : "No graphics card passed the test on this computer, so the processor will convert video. That works; it is just slower.";
+
   return (
     <div className="space-y-6">
-      <Notice>
-        Notflix plays files as they are whenever your browser can (<strong className="text-white">Direct Play</strong>), repackages them without re-encoding when
-        only the container is the problem, converts just the audio when needed, and converts video only as a last resort. A graphics card is optional: every
-        option below is tested on this computer with short sample encodes, and the processor (software) is always available as a fallback.
-      </Notice>
+      <div className="rounded-md bg-white/[0.04] p-4 ring-1 ring-white/10" data-testid="hw-result">
+        <p className="text-[15px] font-medium text-white">{headline}</p>
+        <p className="mt-1 text-[13px] leading-relaxed text-netflix-gray">
+          Most files play as they are. Only when a device can&apos;t play a file does Notflix convert it, using the option below. Automatic picks the best
+          option that passed a real test here and falls back to the processor if it stops working.
+        </p>
+      </div>
 
+      <details className="group rounded-md ring-1 ring-white/10 [&_summary::-webkit-details-marker]:hidden">
+        <summary className="cursor-pointer select-none px-3 py-2 text-sm text-netflix-light-gray hover:text-white">Show test details</summary>
+        <div className="space-y-6 px-3 pb-4 pt-2">
       <div className="grid gap-3 text-sm sm:grid-cols-2">
         <div className="rounded-md bg-white/[0.03] p-3 ring-1 ring-white/10">
           <p className="text-netflix-gray">System</p>
@@ -583,8 +638,8 @@ export function HardwarePanel({ mode, onSaved }: PanelProps) {
       </div>
       {caps?.ffmpeg && !caps.ffmpeg.available && (
         <Notice tone="error">
-          FFmpeg is required for everything except Direct Play. Install it (on Windows: <code>winget install Gyan.FFmpeg</code>), restart Notflix, then check
-          again. See docs/INSTALL-WINDOWS.md.
+          FFmpeg, which Notflix uses to read and convert video, was not found. Stop Notflix, double-click Setup-Notflix.cmd (it offers to install FFmpeg),
+          start Notflix again, then press Test again.
         </Notice>
       )}
 
@@ -657,6 +712,8 @@ export function HardwarePanel({ mode, onSaved }: PanelProps) {
         </table>
         <p className="mt-2 text-[12px] text-netflix-gray">Tested on this computer: ✓ working · ✗ tested and failed · ? listed, not testable here · – not offered{caps?.detectionSeconds ? ` · checked in ${caps.detectionSeconds}s` : ""}</p>
       </div>
+        </div>
+      </details>
 
       <div className="grid gap-5 sm:grid-cols-[1fr_1fr_9rem]">
         <Field id="hw-choice" label="Video conversion uses" hint={selection ? `Now: ${selection.effective === "software" ? "the processor" : (backends.find((b) => b.id === selection.effective)?.label ?? selection.effective)}` : undefined}>
@@ -667,7 +724,7 @@ export function HardwarePanel({ mode, onSaved }: PanelProps) {
                 {b.label}
               </option>
             ))}
-            <option value="off">Processor only (no GPU)</option>
+            <option value="off">Processor only (no graphics card)</option>
           </select>
         </Field>
         <Field id="hw-device" label="Graphics adapter" hint="Only when you have several GPUs of the chosen kind.">

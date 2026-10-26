@@ -74,6 +74,13 @@ export async function PUT(request: NextRequest) {
     if (status.status === "unreachable" || status.status === "error") {
       return NextResponse.json({ error: `${status.message} The token was not saved; try again.`, status, ...view() }, { status: 502 });
     }
+    // A working token is only replaced by one that can stream too (e.g. not by an expired account).
+    if (status.status !== "active" && serverConfig().debrid.validatedAt && secrets().realDebridToken && secrets().realDebridToken !== token) {
+      return NextResponse.json(
+        { error: `${status.message} Your current ${provider.credentialLabel} still works, so it was kept.`, status, ...view() },
+        { status: 409 }
+      );
+    }
     saveSecrets({ realDebridToken: token });
     updateConfig((cfg) => {
       cfg.debrid.validatedAt = status!.status === "active" ? new Date().toISOString() : null;

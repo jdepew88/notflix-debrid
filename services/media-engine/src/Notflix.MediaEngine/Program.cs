@@ -74,6 +74,25 @@ var log = app.Logger;
 log.LogInformation("Notflix media engine {Version} listening on http://{Bind}:{Port} (ffmpeg: {Ffmpeg}{Missing}; cache: {Cache}, limit {Limit:0.0} GiB)",
     EngineOptions.Version, options.BindAddress, options.Port, binaries.Ffmpeg, binaries.Found ? "" : " — NOT FOUND",
     options.TempDirectory, options.CacheMaxBytes / 1073741824.0);
+// The launcher stops the engine by creating <data>/run/engine.stop: a normal host shutdown, so active
+// FFmpeg jobs are ended and their temporary files removed (scripts/notflix.ps1 stop).
+if (options.DataDirectory is { } engineData)
+{
+    var stopFile = Path.Combine(engineData, "run", "engine.stop");
+    try { File.Delete(stopFile); } catch (IOException) { }
+    _ = Task.Run(async () =>
+    {
+        while (!app.Lifetime.ApplicationStopping.IsCancellationRequested)
+        {
+            try { await Task.Delay(500, app.Lifetime.ApplicationStopping); } catch (OperationCanceledException) { break; }
+            if (!File.Exists(stopFile)) continue;
+            log.LogInformation("Stop requested by the launcher");
+            try { File.Delete(stopFile); } catch (IOException) { }
+            app.Lifetime.StopApplication();
+            break;
+        }
+    });
+}
 // Start hardware detection immediately so the first playback does not pay for it.
 _ = app.Services.GetRequiredService<HardwareCapabilitiesProvider>().GetAsync();
 

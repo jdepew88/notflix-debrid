@@ -75,7 +75,7 @@ anything missing or malformed.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `port` | `8421` | engine port, always bound to `127.0.0.1` |
+| `port` | `8421` | engine port, always bound to `127.0.0.1` (change with `Start-Notflix.cmd -EnginePort <port>` or `notflix-cli set-engine-port`) |
 | `hardwareAcceleration` | `auto` | `auto`, `nvenc`, `qsv`, `amf`, `vaapi`, `videotoolbox` or `off` |
 | `hardwareDevice` | `null` | adapter index for the chosen backend, or a Linux render node (`/dev/dri/renderD128`) |
 | `maxConcurrentVideoTranscodes` | `3` | simultaneous video conversions |
@@ -115,7 +115,7 @@ None are needed for normal use; they exist for development, services and contain
 | `NOTFLIX_DATA_DIR` | data folder |
 | `MEDIA_ENGINE_URL` | web → engine address (default from engine.json) |
 | `MEDIA_ENGINE_SECRET` | override the engine key file (both processes must agree) |
-| `MEDIA_ENGINE_PORT`, `MEDIA_ENGINE_BIND`, `MEDIA_ENGINE_TEMP_DIR`, `MEDIA_ENGINE_HWACCEL`, `MEDIA_ENGINE_MAX_TRANSCODES`, `MEDIA_ENGINE_CACHE_MAX_BYTES`, `MEDIA_ENGINE_LIBRARY_ROOTS`, `MEDIA_ENGINE_ALLOWED_HOSTS` | engine settings (override engine.json) |
+| `MEDIA_ENGINE_PORT`, `MEDIA_ENGINE_BIND` (loopback addresses only; anything else is refused), `MEDIA_ENGINE_TEMP_DIR`, `MEDIA_ENGINE_HWACCEL`, `MEDIA_ENGINE_MAX_TRANSCODES`, `MEDIA_ENGINE_CACHE_MAX_BYTES`, `MEDIA_ENGINE_LIBRARY_ROOTS`, `MEDIA_ENGINE_ALLOWED_HOSTS` | engine settings (override engine.json) |
 | `FFMPEG_PATH`, `FFPROBE_PATH` | FFmpeg binaries for the engine |
 | `COOKIE_SECURE` | `true`/`false` to force the cookie `Secure` flag (default: per request) |
 | `SIGNUP_RATE_LIMIT` | new accounts per address per hour (default 5) |
@@ -127,6 +127,7 @@ None are needed for normal use; they exist for development, services and contain
 ```
 paths [--json]                       where everything lives
 set-port <port>                      change the web port
+set-engine-port <port>               change the media engine port (127.0.0.1 only)
 allow-lan on|off                     allow / forbid other devices
 move-data --to <folder>              move the data folder (Notflix stopped)
 accounts list

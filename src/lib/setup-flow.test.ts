@@ -192,6 +192,45 @@ describe("fresh installation", () => {
     expect(status.setupComplete).toBe(true);
   });
 
+  it("keeps a working Real-Debrid token when the replacement has no premium (simulated)", async () => {
+    const { readSecrets } = await import("./install/secrets.mjs");
+    const working = readSecrets(dataDir).realDebridToken;
+    expect(working).toBeTruthy();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ id: 2, username: "free-user", email: "x", premium: 0, expiration: new Date(0).toISOString() }), { status: 200 })));
+    const res = await routes.debrid.PUT(request("/api/config/debrid", { method: "PUT", body: { token: "FREEACCOUNTTOKEN0123456789ABCDEFGHIJKLMNO" }, jar: owner }));
+    vi.unstubAllGlobals();
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/still works, so it was kept/);
+    expect(readSecrets(dataDir).realDebridToken).toBe(working);
+  });
+
+  it("warns the owner (only) about rejected credentials without resetting anything (simulated)", async () => {
+    const alertsRoute = await import("@/app/api/config/alerts/route");
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.includes("themoviedb.org")) return new Response('{"status_code":7}', { status: 401 });
+      if (url.includes("real-debrid.com")) return new Response('{"error":"bad_token","error_code":8}', { status: 401 });
+      return new Response("not found", { status: 404 });
+    }));
+    const res = await alertsRoute.GET(request("/api/config/alerts?fresh=1", { jar: owner }));
+    expect(res.status).toBe(200);
+    const ids = (await res.json()).alerts.map((a: { id: string }) => a.id);
+    expect(ids).toEqual(expect.arrayContaining(["tmdb-rejected", "debrid-rejected"]));
+    // Unreachable providers are not reported as broken credentials.
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    }));
+    const offline = await (await alertsRoute.GET(request("/api/config/alerts?fresh=1", { jar: owner }))).json();
+    expect(offline.alerts.filter((a: { id: string }) => /rejected|premium/.test(a.id))).toEqual([]);
+    vi.unstubAllGlobals();
+    const member: Jar = new Map();
+    keepCookies(await routes.login.POST(request("/api/auth/login", { method: "POST", body: { name: "member", password: "password-2" }, jar: member })), member);
+    expect((await alertsRoute.GET(request("/api/config/alerts", { jar: member }))).status).toBe(403);
+    expect((await alertsRoute.GET(request("/api/config/alerts"))).status).toBe(401);
+    const status = await (await routes.status.GET(request("/api/setup/status"))).json();
+    expect(status.setupComplete).toBe(true);
+  });
+
   it("survives a restart: configuration and accounts are read back from disk", async () => {
     const { readServerConfig } = await import("./install/config.mjs");
     const cfg = readServerConfig(dataDir);

@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=https://aka.ms/configuration-dsc-schema/0.2
+#
+# Software Notflix Debrid needs on Windows. Setup-Notflix.cmd reads the package ids and minimum
+# versions below, checks what is already installed (by running the commands, so copies installed
+# without WinGet - nvm, an MSI, a zip - count too) and offers to install only what is missing.
+#
+# Advanced alternative: winget configure -f requirements.winget
+# (installs every package listed here through WinGet's own DSC resources).
+#
+# Git is optional (only for cloning and updating with git); it is not listed.
+properties:
+  configurationVersion: 0.2.0
+  assertions:
+    - resource: Microsoft.Windows.Developer/OsVersion
+      directives:
+        description: Windows 10 version 1809 or newer (64-bit)
+        allowPrerelease: true
+      settings:
+        MinVersion: "10.0.17763"
+  resources:
+    # notflix: command=node minVersion=22.0.0
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: nodejs
+      directives:
+        description: Node.js LTS (runs the Notflix web server; 22 or newer)
+        allowPrerelease: true
+      settings:
+        id: OpenJS.NodeJS.LTS
+        source: winget
+    # notflix: command=dotnet minVersion=10.0.0 check=dotnet-sdk
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: dotnet-sdk
+      directives:
+        description: .NET 10 SDK (builds and runs the media engine)
+        allowPrerelease: true
+      settings:
+        id: Microsoft.DotNet.SDK.10
+        source: winget
+    # notflix: command=ffmpeg,ffprobe minVersion=6.0
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: ffmpeg
+      directives:
+        description: FFmpeg and FFprobe full build (video probing and conversion)
+        allowPrerelease: true
+      settings:
+        id: Gyan.FFmpeg
+        source: winget

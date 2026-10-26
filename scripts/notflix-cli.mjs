@@ -5,6 +5,7 @@
 //   node scripts/notflix-cli.mjs init [--json]             create folders/secrets; print the setup code
 //   node scripts/notflix-cli.mjs status --json             listening port, setup state (for the launcher)
 //   node scripts/notflix-cli.mjs set-port <port>           change the web port (e.g. after a conflict)
+//   node scripts/notflix-cli.mjs set-engine-port <port>    change the media engine's port (127.0.0.1 only)
 //   node scripts/notflix-cli.mjs allow-lan on|off          allow / forbid other devices on the network
 //   node scripts/notflix-cli.mjs move-data --to <folder>   move accounts/settings/credentials (Notflix stopped)
 //   node scripts/notflix-cli.mjs accounts list
@@ -21,7 +22,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { DATA_DIR_POINTER, installPaths, resolveDataDir } from "../src/lib/install/paths.mjs";
-import { bindAddressFor, ensureEngineLibraryRoot, readEngineConfig, readServerConfig, updateServerConfig, validPort } from "../src/lib/install/config.mjs";
+import { bindAddressFor, ensureEngineLibraryRoot, readEngineConfig, readServerConfig, updateEngineConfig, updateServerConfig, validPort } from "../src/lib/install/config.mjs";
 import { initializeInstall, readSetupCode } from "../src/lib/install/init.mjs";
 import { readSecrets, rotateSecretsKey, secretsStatus, updateSecrets } from "../src/lib/install/secrets.mjs";
 import { readJson, restrictToOwner, withFileLock, writeFileAtomic, writeJsonAtomic } from "../src/lib/install/store.mjs";
@@ -243,6 +244,14 @@ switch (command) {
     console.log(`Web port set to ${port}.`);
     break;
   }
+  case "set-engine-port": {
+    const port = Number(rest[0]);
+    if (!validPort(port)) fail("use a port between 1024 and 65535");
+    if (port === readServerConfig(dataDir).server.port) fail("that port belongs to the web server");
+    updateEngineConfig(dataDir, { port });
+    console.log(`Media engine port set to ${port}.`);
+    break;
+  }
   case "allow-lan": {
     if (rest[0] !== "on" && rest[0] !== "off") fail("usage: allow-lan on|off");
     updateServerConfig(dataDir, (c) => {
@@ -261,6 +270,6 @@ switch (command) {
     credentials(rest);
     break;
   default:
-    console.log(fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 19).map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
+    console.log(fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 20).map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
     process.exit(command ? 1 : 0);
 }

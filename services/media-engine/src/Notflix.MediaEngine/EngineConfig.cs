@@ -54,6 +54,10 @@ public static class EngineConfig
             options.Port = int.TryParse(port, NumberStyles.None, CultureInfo.InvariantCulture, out var p) && p is > 0 and < 65536
                 ? p : throw new EngineConfigException($"MEDIA_ENGINE_PORT '{port}' is not a valid port.");
         if (Env("MEDIA_ENGINE_BIND") is { } bind) options.BindAddress = bind;
+        // The engine trusts its caller (the web server on this computer); it must never be reachable
+        // from the network.
+        if (!System.Net.IPAddress.TryParse(options.BindAddress, out var bindIp) || !System.Net.IPAddress.IsLoopback(bindIp))
+            throw new EngineConfigException($"The media engine only listens on this computer (127.0.0.1 or ::1), not '{options.BindAddress}'.");
         if (Env("FFMPEG_PATH") is { } ffmpeg) options.FfmpegPath = ffmpeg;
         if (Env("FFPROBE_PATH") is { } ffprobe) options.FfprobePath = ffprobe;
         if (Env("MEDIA_ENGINE_HWACCEL") is { } hw) options.HardwareAcceleration = ValidHwaccel(hw, "MEDIA_ENGINE_HWACCEL");

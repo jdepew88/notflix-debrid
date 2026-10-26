@@ -177,6 +177,19 @@ export default function SettingsPage() {
             <div id="system">
               <Card title="System" description="How this server is set up right now.">
                 <SystemStatus />
+                <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-5">
+                  <p className="max-w-md text-sm text-netflix-light-gray">
+                    Walk through the setup steps again (server, TMDB, Real-Debrid, graphics card). Accounts and settings are kept; new keys are checked before
+                    they replace the old ones.
+                  </p>
+                  <Link
+                    href="/settings/wizard"
+                    data-testid="rerun-wizard"
+                    className="rounded-md bg-white/10 px-4 py-2.5 text-sm font-semibold text-white ring-1 ring-white/15 hover:bg-white/20"
+                  >
+                    Run the setup wizard again
+                  </Link>
+                </div>
               </Card>
             </div>
             <div id="server">

@@ -25,35 +25,38 @@ device can't play directly — using whatever graphics hardware you have, or non
 - **Private by default**: listens on `127.0.0.1` until you allow your local network; credentials stay
   on the server and are never sent to browsers, phones or TVs.
 
-## Requirements (Windows, the supported platform for now)
+## Quick start (Windows)
+
+1. **Download** — on GitHub click **Code → Download ZIP**, then extract it (any folder; spaces are fine).
+2. **Double-click `Setup-Notflix.cmd`** — it checks for Node.js, the .NET 10 SDK and FFmpeg, offers to
+   install anything missing with WinGet (it asks first), and builds Notflix.
+3. **Double-click `Start-Notflix.cmd`** — Notflix starts and your browser opens the setup wizard.
+4. In the wizard, create your username and password, then paste your two keys. The wizard has a
+   button for each official page:
+   - TMDB API key: <https://www.themoviedb.org/settings/api>
+   - Real-Debrid API token: <https://real-debrid.com/apitoken>
+5. The wizard tests your graphics card automatically. Press **Finish setup** and start browsing.
+
+`Stop-Notflix.cmd` stops it; `Start-Notflix.cmd` starts it again (straight to the sign-in page
+once setup is done). No `.env` files to edit and no commands to type.
+
+**With Git instead of the ZIP:** `git clone https://github.com/jdepew88/notflix-debrid.git`, then the
+same double-clicks. Git is optional and only makes updating easier.
+
+### What you need
 
 | | |
 |---|---|
-| OS | Windows 10 or 11, 64-bit |
-| [Node.js](https://nodejs.org/) | 22 LTS or newer — `winget install OpenJS.NodeJS.LTS` |
-| [.NET](https://dotnet.microsoft.com/) | .NET 10 SDK — `winget install Microsoft.DotNet.SDK.10` |
-| [FFmpeg](https://ffmpeg.org/) | a full build with FFprobe — `winget install Gyan.FFmpeg` |
-| Graphics card | optional (NVIDIA, Intel or AMD are used when they pass a test encode) |
-| Accounts | a free TMDB API key and a premium Real-Debrid account |
+| OS | Windows 10 (1809+) or 11, 64-bit |
+| Software | Node.js 22+, .NET 10 SDK, FFmpeg + FFprobe. Setup installs them for you ([`requirements.winget`](requirements.winget)). |
+| Graphics card | optional (NVIDIA, Intel or AMD are used when they pass a real test conversion; otherwise the processor) |
+| Accounts | your own free TMDB account and your own premium Real-Debrid subscription |
 
 Linux, macOS and Docker are on the [roadmap](docs/ROADMAP.md); the engine already understands
-VA-API and VideoToolbox, but the launcher and packaging are Windows-only today.
+VA-API and VideoToolbox, but the launchers and packaging are Windows-only today.
 
-## Quick start
-
-```powershell
-git clone <this repository> notflix-debrid
-cd notflix-debrid
-powershell -ExecutionPolicy Bypass -File scripts\notflix.ps1 setup   # checks tools, installs, builds
-.\Start-Notflix.cmd                                                   # or: scripts\notflix.ps1 start
-```
-
-Your browser opens the setup wizard at `http://localhost:8420/setup` with the one-time setup code
-filled in (it is also printed in the window and saved as `setup-code.txt` in the data folder).
-Stop Notflix with `Stop-Notflix.cmd`.
-
-Full instructions: [docs/INSTALL-WINDOWS.md](docs/INSTALL-WINDOWS.md) · first-run walkthrough:
-[docs/ONBOARDING.md](docs/ONBOARDING.md).
+Full instructions and troubleshooting: [docs/INSTALL-WINDOWS.md](docs/INSTALL-WINDOWS.md) ·
+the wizard step by step: [docs/ONBOARDING.md](docs/ONBOARDING.md).
 
 ## Documentation
 
@@ -75,7 +78,10 @@ src/app                    Next.js pages and API routes (setup wizard, browse, p
 src/lib/install            data folder, configuration, credentials, first-start initialization
 src/lib/debrid             debrid provider interface + Real-Debrid implementation
 services/media-engine      .NET 10 media engine (probing, decisions, FFmpeg, HLS, hardware detection)
-scripts/notflix.ps1        Windows launcher (setup/start/stop/status/test)
+Setup-Notflix.cmd          install prerequisites (WinGet) and build: setup.ps1 + requirements.winget
+Start-Notflix.cmd          start web server + engine, open the browser (wizard until setup is done)
+Stop-Notflix.cmd           stop this installation's web server and engine
+scripts/notflix.ps1        launcher behind the .cmd files (setup/start/stop/status/logs/test)
 scripts/notflix-cli.mjs    offline maintenance (paths, port, move data, account recovery)
 ```
 

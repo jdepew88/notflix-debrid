@@ -252,7 +252,7 @@ async function setupPhase() {
     check("session terminated on request", del.status < 300 && after.status >= 400, `delete ${del.status}, then ${after.status}`);
   }
 
-  fs.writeFileSync(statePath, JSON.stringify({ ownerName: "owner", ownerPassword: a.status === 200 ? "correct-horse-1" : "correct-horse-2" }));
+  fs.writeFileSync(statePath, JSON.stringify(a.status === 200 ? { ownerName: "owner", ownerPassword: "correct-horse-1" } : { ownerName: "intruder", ownerPassword: "correct-horse-2" }));
 }
 
 async function restartPhase() {

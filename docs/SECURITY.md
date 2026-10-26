@@ -61,7 +61,7 @@ Settings → Accounts.
 |---|---|---|
 | default | `127.0.0.1:8420` | this computer only (also enforced per request) |
 | LAN access on | `0.0.0.0:8420` | devices that can reach this PC — normally your local network |
-| media engine | `127.0.0.1:8421` always | the web server only, with a shared key |
+| media engine | `127.0.0.1:8421` always (a non-loopback `bindAddress` / `MEDIA_ENGINE_BIND` is refused at start) | the web server only, with a shared key |
 
 Notflix **never** opens ports on your router (no UPnP) and never configures internet exposure.
 

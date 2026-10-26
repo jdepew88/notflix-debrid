@@ -30,6 +30,8 @@ param(
   [switch]$Dev,
   # Change the web port before starting (saved in the configuration).
   [int]$Port = 0,
+  # Change the media engine's port before starting (saved; the engine stays on 127.0.0.1).
+  [int]$EnginePort = 0,
   # Use this data folder for this run (sets NOTFLIX_DATA_DIR). To move data permanently use move-data.
   [string]$DataDir = "",
   # Target folder for move-data.
@@ -75,8 +77,12 @@ function Get-RunningProcess($runDir, $name) {
   $id = 0
   if (-not [int]::TryParse((Get-Content $file -Raw).Trim(), [ref]$id)) { return $null }
   $p = Get-Process -Id $id -ErrorAction SilentlyContinue
-  # A recycled PID belonging to something else is not ours.
-  if ($p -and ($p.ProcessName -match '^(node|dotnet|Notflix\.MediaEngine)$')) { return $p }
+  if (-not $p) { return $null }
+  # A recycled PID belongs to something else: only a process started from this installation's
+  # server.mjs / engine DLL is ours (never stop an unrelated node.exe or dotnet.exe).
+  $marker = if ($name -eq "web") { Join-Path $Root "server.mjs" } else { $EngineDll }
+  $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction SilentlyContinue).CommandLine
+  if ($cmd -and $cmd.ToLowerInvariant().Contains($marker.ToLowerInvariant())) { return $p }
   return $null
 }
 
@@ -87,9 +93,42 @@ function Test-Url($url, $timeoutSec = 2) {
   } catch { return $false }
 }
 
-function Test-PortFree([int]$port) {
-  $l = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
-  return -not $l
+# Listening sockets on a port as @{ Address; Pid }. netstat is used because Get-NetTCPConnection
+# sometimes returns an incomplete list (WMI provider trouble).
+function Get-Listeners([int]$port) {
+  $out = @()
+  foreach ($line in (& netstat.exe -ano 2>$null)) {
+    $m = [regex]::Match($line, '^\s*TCP\s+(\S+):(\d+)\s+\S+\s+LISTENING\s+(\d+)\s*$')
+    if ($m.Success -and [int]$m.Groups[2].Value -eq $port) {
+      $out += [pscustomobject]@{ Address = $m.Groups[1].Value.Trim('[', ']'); Pid = [int]$m.Groups[3].Value }
+    }
+  }
+  return $out
+}
+
+# $null when the port is free, else a description of the program holding it.
+function Get-PortUser([int]$port) {
+  foreach ($l in (Get-Listeners $port)) {
+    # PID 0 / a vanished process: a socket that is still closing after its program exited.
+    $p = if ($l.Pid -gt 0) { Get-Process -Id $l.Pid -ErrorAction SilentlyContinue } else { $null }
+    if ($p) { return "$($p.ProcessName) (PID $($l.Pid))" }
+  }
+  # Last resort (netstat unavailable): try binding the port.
+  foreach ($address in @([System.Net.IPAddress]::Loopback, [System.Net.IPAddress]::Any)) {
+    $t = New-Object System.Net.Sockets.TcpListener($address, $port)
+    try { $t.ExclusiveAddressUse = $true; $t.Start() } catch { return "another program" } finally { try { $t.Stop() } catch { } }
+  }
+  return $null
+}
+
+function Assert-Installed {
+  $missing = @()
+  if (-not (Test-Path (Join-Path $Root "node_modules\next\package.json"))) { $missing += "web packages" }
+  if (-not $Dev -and -not (Test-Path (Join-Path $Root ".next\BUILD_ID"))) { $missing += "web app build" }
+  if (-not (Test-Path $EngineDll)) { $missing += "media engine build" }
+  if ($missing.Count -gt 0) {
+    throw "Notflix is not installed yet in $Root (missing: $($missing -join ', ')). Double-click Setup-Notflix.cmd first."
+  }
 }
 
 function Assert-Prerequisites([switch]$ForBuild) {
@@ -119,12 +158,20 @@ function Assert-Prerequisites([switch]$ForBuild) {
 
 function Invoke-Setup {
   Write-Step "Checking prerequisites"
-  if (-not (Assert-Prerequisites -ForBuild)) { throw "Install the missing prerequisites above, open a new PowerShell window, and run setup again." }
-  Write-Step "Installing web packages (npm ci)"
+  if (-not (Assert-Prerequisites -ForBuild)) { throw "Install the missing software above (Setup-Notflix.cmd offers to do it), then run setup again." }
   Push-Location $Root
   try {
-    & npm ci --no-audit --no-fund
-    if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
+    # Running setup again must not reinstall unchanged packages.
+    $stamp = Join-Path $Root "node_modules\.notflix-lock-hash"
+    $lockHash = (Get-FileHash (Join-Path $Root "package-lock.json") -Algorithm SHA256).Hash
+    if ((Test-Path $stamp) -and ((Get-Content $stamp -Raw).Trim() -eq $lockHash) -and (Test-Path (Join-Path $Root "node_modules\next\package.json"))) {
+      Write-Ok "Web packages are up to date"
+    } else {
+      Write-Step "Installing web packages (npm ci)"
+      & npm ci --no-audit --no-fund
+      if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
+      Set-Content -Path $stamp -Value $lockHash
+    }
     Write-Step "Building the media engine"
     & dotnet build $EngineProject -c Release --nologo -v quiet
     if ($LASTEXITCODE -ne 0) { throw "dotnet build failed" }
@@ -143,13 +190,14 @@ function Invoke-Setup {
   $i = Get-Install
   Write-Ok "Data folder: $($i.dataDir)"
   foreach ($w in $i.warnings) { Write-Warn2 $w }
-  Write-Ok "Setup complete. Next: scripts\notflix.ps1 start  (or double-click Start-Notflix.cmd)"
+  Write-Ok "Build complete. Next: double-click Start-Notflix.cmd"
 }
 
 function Start-Engine($i) {
   if (Get-RunningProcess $i.runDir "engine") { Write-Ok "Media engine already running"; return }
-  if (-not (Test-Path $EngineDll)) { throw "The media engine is not built. Run: scripts\notflix.ps1 setup" }
-  if (-not (Test-PortFree $i.enginePort)) { throw "Port $($i.enginePort) (media engine) is in use by another program. Change 'port' in $($i.dataDir)\config\engine.json." }
+  if (-not (Test-Path $EngineDll)) { throw "The media engine is not built. Double-click Setup-Notflix.cmd first." }
+  $holder = Get-PortUser $i.enginePort
+  if ($holder) { throw "Port $($i.enginePort), which the media engine uses, is taken by $holder. Close that program, or start Notflix with another engine port from a command prompt in this folder: Start-Notflix.cmd -EnginePort 8431" }
   Write-Step "Starting media engine on 127.0.0.1:$($i.enginePort)"
   $env:NOTFLIX_DATA_DIR = $i.dataDir
   $p = Start-Process -FilePath "dotnet" -ArgumentList "`"$EngineDll`"" -WorkingDirectory $Root -WindowStyle Hidden -PassThru `
@@ -168,8 +216,9 @@ function Start-Engine($i) {
 
 function Start-Web($i) {
   if (Get-RunningProcess $i.runDir "web") { Write-Ok "Web server already running"; return }
-  if (-not $Dev -and -not (Test-Path (Join-Path $Root ".next\BUILD_ID"))) { throw "The web app is not built. Run: scripts\notflix.ps1 setup" }
-  if (-not (Test-PortFree $i.webPort)) { throw "Port $($i.webPort) is in use by another program. Choose another: scripts\notflix.ps1 start -Port <number>" }
+  if (-not $Dev -and -not (Test-Path (Join-Path $Root ".next\BUILD_ID"))) { throw "The web app is not built. Double-click Setup-Notflix.cmd first." }
+  $holder = Get-PortUser $i.webPort
+  if ($holder) { throw "Port $($i.webPort), which Notflix uses, is taken by $holder. Close that program, or start Notflix on another port from a command prompt in this folder: Start-Notflix.cmd -Port 8430" }
   $mode = if ($Dev) { "development" } else { "production" }
   Write-Step "Starting web server ($mode) on $($i.bindAddress):$($i.webPort)"
   $env:NOTFLIX_DATA_DIR = $i.dataDir
@@ -194,9 +243,11 @@ function Stop-Component($runDir, $name, [switch]$Graceful) {
   $p = Get-RunningProcess $runDir $name
   if (-not $p) { Write-Ok "$name not running"; Remove-Item (Get-PidFile $runDir $name) -ErrorAction SilentlyContinue; return }
   if ($Graceful) {
-    # server.mjs watches for this file and shuts down cleanly.
-    Set-Content -Path (Join-Path $runDir "web.stop") -Value "stop"
-    for ($n = 0; $n -lt 20 -and -not $p.HasExited; $n++) { Start-Sleep -Milliseconds 500; $p.Refresh() }
+    # server.mjs and the engine watch for these files and shut down cleanly (the engine ends its
+    # FFmpeg jobs and removes their temporary files).
+    Set-Content -Path (Join-Path $runDir "$name.stop") -Value "stop"
+    for ($n = 0; $n -lt 30 -and -not $p.HasExited; $n++) { Start-Sleep -Milliseconds 500; $p.Refresh() }
+    Remove-Item (Join-Path $runDir "$name.stop") -ErrorAction SilentlyContinue
   }
   if (-not $p.HasExited) {
     # /T also ends child processes (FFmpeg runs inside the engine's job object and exits with it).
@@ -206,32 +257,72 @@ function Stop-Component($runDir, $name, [switch]$Graceful) {
   Write-Ok "Stopped $name (PID $($p.Id))"
 }
 
+function Open-Browser([string]$url) {
+  # Test seam: record the address instead of opening a browser (scripts\test-windows-install.mjs).
+  if ($env:NOTFLIX_BROWSER_LOG) { Add-Content -Path $env:NOTFLIX_BROWSER_LOG -Value $url; return }
+  try { Start-Process $url | Out-Null; Write-Ok "Opened $url in your browser" }
+  catch { Write-Warn2 "Could not open a browser automatically. Open this address yourself: $url" }
+}
+
+# One launcher at a time per data folder: two quick double-clicks must not start two servers.
+function Enter-LauncherLock($i) {
+  $lock = Join-Path $i.runDir "launcher.lock"
+  for ($attempt = 0; $attempt -lt 2; $attempt++) {
+    try {
+      $fs = [System.IO.File]::Open($lock, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write)
+      $bytes = [System.Text.Encoding]::ASCII.GetBytes("$PID")
+      $fs.Write($bytes, 0, $bytes.Length)
+      $fs.Close()
+      return $lock
+    } catch [System.IO.IOException] {
+      $item = Get-Item $lock -ErrorAction SilentlyContinue
+      if ($item -and ((Get-Date) - $item.LastWriteTime).TotalMinutes -lt 3) { throw "Notflix is already starting in another window. Wait for it to finish." }
+      Remove-Item $lock -ErrorAction SilentlyContinue
+    }
+  }
+  throw "Could not start: $lock is in use."
+}
+
 function Invoke-Start {
+  Assert-Installed
   Write-Step "Checking prerequisites"
-  if (-not (Assert-Prerequisites)) { throw "Install the missing prerequisites above, then run start again." }
+  if (-not (Assert-Prerequisites)) { throw "Install the missing software above (double-click Setup-Notflix.cmd), then start Notflix again." }
   if ($Port -gt 0) { Invoke-Cli @("set-port", "$Port") | Out-Null }
+  if ($EnginePort -gt 0) { Invoke-Cli @("set-engine-port", "$EnginePort") | Out-Null }
   $i = Get-Install
   foreach ($w in $i.warnings) { Write-Warn2 $w }
   Write-Ok "Data folder: $($i.dataDir)"
-  Start-Engine $i
-  try { Start-Web $i } catch { Stop-Component $i.runDir "engine"; throw }
+  $lock = Enter-LauncherLock $i
+  try {
+    $engineRunning = Get-RunningProcess $i.runDir "engine"
+    if ($engineRunning -and (Get-RunningProcess $i.runDir "web")) { Write-Ok "Notflix is already running" }
+    Start-Engine $i
+    try { Start-Web $i } catch { if (-not $engineRunning) { Stop-Component $i.runDir "engine" -Graceful }; throw }
+  } finally { Remove-Item $lock -ErrorAction SilentlyContinue }
   Show-Status
   $s = (Invoke-Cli @("status")) | ConvertFrom-Json
-  $url = "http://localhost:$($s.webPort)"
-  if (-not $s.setupComplete -and $s.setupCode) {
-    Write-Host ""
-    Write-Host "  First-run setup: open $url/setup" -ForegroundColor White
-    Write-Host "  Setup code:      $($s.setupCode)" -ForegroundColor White
-    Write-Host ""
-    $url = "$url/setup#code=$($s.setupCode)"
+  $webPort = if ($s.listening -and $s.listening.port) { $s.listening.port } else { $s.webPort }
+  $base = "http://localhost:$webPort"
+  Write-Host ""
+  # The persistent setup.completed flag decides; an owner account alone does not mean setup is done.
+  if (-not $s.setupComplete) {
+    Write-Host "  Notflix is running at $base - first-run setup is not finished yet." -ForegroundColor White
+    if ($s.setupCode) { Write-Host "  Setup code: $($s.setupCode)" -ForegroundColor White; $url = "$base/setup#code=$($s.setupCode)" }
+    else { $url = "$base/setup" }
+  } else {
+    Write-Host "  Notflix is running at $base" -ForegroundColor White
+    $url = "$base/"
   }
-  if (-not $NoBrowser) { Start-Process $url | Out-Null }
+  Write-Host ""
+  if (-not $NoBrowser) { Open-Browser $url }
 }
 
 function Invoke-Stop {
   $i = Get-Install
+  $was = (Get-RunningProcess $i.runDir "web") -or (Get-RunningProcess $i.runDir "engine")
   Stop-Component $i.runDir "web" -Graceful
-  Stop-Component $i.runDir "engine"
+  Stop-Component $i.runDir "engine" -Graceful
+  if ($was) { Write-Ok "Notflix stopped" } else { Write-Ok "Notflix was not running" }
 }
 
 function Show-Status {
@@ -266,7 +357,7 @@ function Invoke-Tests {
     if ($Integration) {
       $dir = Join-Path $env:TEMP ("notflix-it-" + [Guid]::NewGuid().ToString("N").Substring(0, 8))
       Write-Step "Fresh installation end to end (throwaway data: $dir)"
-      $i = Start-Throwaway $dir { Invoke-Cli @("set-port", "8519") | Out-Null }
+      $i = Start-Throwaway $dir { Invoke-Cli @("set-port", "8519") | Out-Null; Invoke-Cli @("set-engine-port", "8518") | Out-Null }
       try {
         & node (Join-Path $Root "scripts\test-install-e2e.mjs") --base "http://localhost:$($i.webPort)" --data $dir
         if ($LASTEXITCODE -ne 0) { $failed += "fresh-install e2e" }

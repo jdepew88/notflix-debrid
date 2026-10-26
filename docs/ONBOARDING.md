@@ -1,94 +1,117 @@
 # First-run setup
 
-A new Notflix installation opens a guided setup at `/setup`. Every other page redirects there until
-setup is complete, and setup cannot be restarted afterwards — later changes happen in
-**Settings** (owner only).
+`Start-Notflix.cmd` opens the setup wizard in your browser the first time. Every Notflix page leads
+there until setup is finished. Whether setup is finished is a single saved flag
+(`setup.completed` in `config\server.json`): an owner account alone does not count, and once the
+flag is set, restarting Notflix never shows the wizard again. Changes later happen in **Settings**
+(owner only), which can run the same wizard again.
 
-## Before you start: the setup code
+What you need: about ten minutes, a free [TMDB](https://www.themoviedb.org/) account and a paid
+[Real-Debrid](https://real-debrid.com/) subscription. Notflix itself contains no movies or shows.
 
-Anyone who can reach the server could otherwise claim it, so the first screen asks for a one-time
-**setup code**. It is printed by the launcher, saved as `setup-code.txt` in the data folder
-(`%ProgramData%\NotflixDebrid` by default) and filled in automatically when the launcher opens your
-browser. It is deleted as soon as the owner account exists; from then on only the owner's sign-in
-can continue or change setup.
+## If setup is interrupted
+
+Close the browser or stop Notflix at any point; nothing is lost. Each completed step is saved on
+the server. The next `Start-Notflix.cmd` opens the wizard again, and it continues with the first
+unfinished step (after you sign in as the owner, if the owner account already exists).
+
+## Welcome — the setup code
+
+The first screen asks for a one-time **setup code** so that nobody else on your network can claim
+your server. The launcher fills it in for you (it is also shown in the launcher window and saved as
+`setup-code.txt` in the data folder, `%ProgramData%\NotflixDebrid`). It is deleted when the owner
+account exists.
 
 ## Step 1 — Server
 
+The defaults are right for most people: **Next**.
+
 | Setting | Default | Notes |
 |---|---|---|
-| Server name or address | empty | How other devices should reach this PC (e.g. `media-pc.local`, `192.168.1.20`). Used for displayed links. |
-| Web port | `8420` | Saving a new port moves the running server there; the wizard follows automatically. The media engine uses `8421` on `127.0.0.1` only. |
-| Allow other devices on my local network | off | Off = listens on `127.0.0.1` only. On = listens on all interfaces; your router is never touched. |
-| Behind a reverse proxy | off | Only if a proxy (Caddy, nginx, Traefik…) terminates HTTPS in front of Notflix. Enables trust in `X-Forwarded-*` headers. Asks for the public `https://` address. |
-| Media cache folder | `<data>\cache` | Disposable HLS segments. Must not be a drive root, the data/settings folders, or the program folder. |
-| Maximum cache size | 10 GB | Oldest data is evicted first. |
-| Data folder | shown read-only | Accounts, settings and credentials. To move it: stop Notflix, `scripts\notflix.ps1 move-data -To <folder>`. |
+| Server name or address | empty | How other devices should reach this PC (e.g. `media-pc.local`, `192.168.1.20`). Only used for displayed links. |
+| Web port | `8420` | Saving a new port moves the running server there; the wizard follows. The media engine uses `8421` on this computer only. |
+| Allow other devices on my local network | off | Off: only this computer. On: phones and TVs on your home network too. Your router is never changed. |
+| Behind a reverse proxy | off | Only for advanced setups where Caddy/nginx/Traefik provides HTTPS in front of Notflix. |
+| Media cache folder | `<data>\cache` | Temporary video pieces; safe to delete. Must not be a drive root or the data/program folder. |
+| Maximum cache size | 10 GB | Oldest data is removed first. |
 
 ## Step 2 — Owner account
 
-Username (2–32 characters), optional display name, password (8+ characters) and confirmation. This
-account becomes the **owner**: the only account that can change system settings and credentials.
-Passwords are stored as salted scrypt hashes (N=2¹⁷, r=8, p=1), never in plain text. Only one owner
-can ever be created; concurrent attempts are serialized and all but one are refused.
+Choose a username and a password (8+ characters; a passphrase is best). This account **owns** the
+server: only it can change settings and keys. You can add accounts for family members later.
+Passwords are stored as salted scrypt hashes, never in plain text. Only one owner can ever exist.
 
-If the owner already exists (e.g. you continue setup in another browser), this step asks you to
-sign in as the owner instead.
+## Step 3 — TMDB (movie and TV information)
 
-## Step 3 — Metadata (TMDB) — required
+TMDB provides titles, posters, descriptions, episodes and age ratings.
 
-Notflix uses **TMDB only** for the catalog, artwork, details, episode lists and age ratings. Create
-a free key at <https://www.themoviedb.org/settings/api> and paste either the **API Key** (v3) or the
-**API Read Access Token** (v4). Notflix checks it against TMDB before storing it; a rejected key is
-never saved. No other metadata service (such as TVDB) is used by this edition, so none is asked for.
+1. Press **Get your TMDB API key** — it opens <https://www.themoviedb.org/settings/api> in a new tab.
+2. Sign in to TMDB, or create a free account. If TMDB asks, request a free developer key for personal use.
+3. Copy your **API Key**, or the longer **API Read Access Token** — either works.
+4. Come back to Notflix, paste it, and press **Save and continue**.
 
-## Step 4 — Real-Debrid — required
+Notflix checks the key with TMDB first. If TMDB rejects it you see a short explanation and nothing is
+saved. The key is never shown again (only its last four characters) and never sent to browsers.
 
-Paste the API token from <https://real-debrid.com/apitoken>. It is validated with Real-Debrid
-first; the wizard shows the account name and premium status, never the token. Streaming needs an
-active premium subscription.
+## Step 4 — Real-Debrid
 
-**Release search.** To find a title, Notflix asks a Stremio-compatible release index which files
-exist and which are cached on Real-Debrid. Choose at least one:
+1. Press **Get your Real-Debrid API token** — it opens <https://real-debrid.com/apitoken> in a new tab.
+2. Sign in to your Real-Debrid account.
+3. Copy your private token. Treat it like a password.
+4. Come back to Notflix, paste it, and press **Save and continue**.
+
+Notflix checks the token with Real-Debrid on the server and shows whether it worked (with your
+account name and premium status). Streaming needs an active premium subscription.
+
+**Release search** (below the token). To find a title, Notflix asks a release index which files exist
+and which are already cached on Real-Debrid. Keep at least one on:
 
 | Source | Default | What it receives |
 |---|---|---|
-| Torrentio (`torrentio.strem.fun`) | on | your Real-Debrid API token, embedded in each request URL (that is how Torrentio checks the cache) |
-| Peerflix (`peerflix.mov`) | off | your Real-Debrid API token, likewise |
-| Custom addon | off | everything in the URL you provide (must be `https://`) |
+| Torrentio (`torrentio.strem.fun`) | on | your Real-Debrid token, in each request (that is how Torrentio checks your cache) |
+| Peerflix (`peerflix.mov`) | off | your Real-Debrid token, likewise |
+| Custom addon | off | everything in the `https://` address you provide |
 
-These requests come from the server; browsers and TVs never see the token or the addon URLs.
+These requests come from the Notflix server; browsers and TVs never see the token.
 
-## Step 5 — Hardware acceleration
+## Step 5 — Graphics card (hardware acceleration)
 
-The media engine reports what it found **and what it actually tested** on this computer:
+Most files play exactly as they are. Only when a TV or browser can't play a file does Notflix convert
+it. This step shows, in one sentence, what will do that on your computer, for example *"Notflix will
+use NVIDIA GeForce RTX 3060 (NVIDIA NVENC). It was tested on this computer and works."* — or that the
+processor will be used.
 
-- operating system and architecture, FFmpeg and FFprobe versions and paths;
-- graphics adapters (virtual adapters such as remote-desktop drivers are ignored);
-- per acceleration method: **Working** (a real test encode succeeded), **Test failed** (detected,
-  but the test did not work — the note says why), or **Not available**; per codec ✓/✗ for encode
-  and decode.
-
-Choose **Automatic** (best tested option: NVENC → Quick Sync → AMF → VA-API → VideoToolbox), a
-specific tested option, or **Processor only**. With several GPUs of the same kind you can pick one.
-If a chosen option stops working later (driver update, card removed) Notflix falls back
-automatically and shows why. See [HARDWARE-ACCELERATION.md](HARDWARE-ACCELERATION.md).
+Leave **Automatic** selected: it uses the best option that passed a **real test conversion** on this
+computer (NVIDIA → Intel → AMD) and falls back to the processor if it ever stops working. **Processor
+only** is always available. **Show test details** lists every option with ✓/✗ per format, the
+graphics adapters found and the FFmpeg version. Nothing is claimed to work unless the test passed.
+See [HARDWARE-ACCELERATION.md](HARDWARE-ACCELERATION.md).
 
 ## Step 6 — Finish
 
-A summary lists the server address(es), network exposure, administrator, TMDB and Real-Debrid
-status, release sources, hardware in use, cache and data folders. **Finish setup** is only enabled
-when every requirement is met:
+A summary shows the address, network access, owner, TMDB, Real-Debrid, release search, graphics card,
+cache and data folder. **Finish setup** is enabled when everything required works:
 
 | Requirement | Why |
 |---|---|
 | Owner account | someone must own the server |
-| TMDB connected | nothing can be browsed without it |
-| Real-Debrid connected + a release source enabled | nothing can be played without it |
-| Media engine running, FFmpeg and FFprobe found | needed for probing and any conversion |
+| TMDB key accepted | nothing can be browsed without it |
+| Real-Debrid token accepted + a release source on | nothing can be played without it |
+| Media engine running, FFmpeg and FFprobe found | needed to read and convert video |
 
-After finishing you land on **Who's watching?**. Then:
+Anything missing has a **Fix** link to its step. After finishing you land on **Who's watching?**.
 
-- Try **Settings → Playback → Playback self-test** to watch the synthetic sample videos play in
-  every mode on this hardware (no account needed).
-- Add accounts for other people in **Settings → Accounts** (self sign-up is off by default).
-- Enable LAN access when you want to watch on other devices.
+## Changing things later
+
+As the owner: **Settings → System → Run the setup wizard again**. It is the same wizard without the
+owner step. Your accounts, profiles, watch history and settings are kept:
+
+- **Replacing a key or token:** paste the new one. It is checked first; if it is rejected, the
+  current one stays. A working Real-Debrid token is not replaced by one without premium access.
+  To keep the current value, press **Keep current key** (or just go on).
+- **Graphics card:** **Test again** re-runs the hardware tests without changing other settings;
+  choose a different option and save.
+
+If a stored key stops working (for example a revoked token or an expired subscription), the owner —
+and only the owner — sees a **"Notflix needs attention"** banner with a **Fix it** link to the right
+step. Nothing is reset.
