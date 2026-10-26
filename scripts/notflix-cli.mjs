@@ -1,0 +1,219 @@
+#!/usr/bin/env node
+// Notflix maintenance CLI (used by scripts/notflix.ps1; works offline, without the server).
+//
+//   node scripts/notflix-cli.mjs paths [--json]            where data, logs and config live
+//   node scripts/notflix-cli.mjs init [--json]             create folders/secrets; print the setup code
+//   node scripts/notflix-cli.mjs status --json             listening port, setup state (for the launcher)
+//   node scripts/notflix-cli.mjs set-port <port>           change the web port (e.g. after a conflict)
+//   node scripts/notflix-cli.mjs allow-lan on|off          allow / forbid other devices on the network
+//   node scripts/notflix-cli.mjs move-data --to <folder>   move accounts/settings/credentials (Notflix stopped)
+//   node scripts/notflix-cli.mjs accounts list
+//   node scripts/notflix-cli.mjs accounts reset-password <username>   prints a temporary password
+//   node scripts/notflix-cli.mjs accounts set-role <username> admin|user
+//
+// The data directory is NOTFLIX_DATA_DIR, else the folder chosen with move-data, else the OS default
+// (%ProgramData%\NotflixDebrid on Windows). Pass --data-dir <folder> to override for one command.
+import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { DATA_DIR_POINTER, installPaths, resolveDataDir } from "../src/lib/install/paths.mjs";
+import { bindAddressFor, ensureEngineLibraryRoot, readEngineConfig, readServerConfig, updateServerConfig, validPort } from "../src/lib/install/config.mjs";
+import { initializeInstall, readSetupCode } from "../src/lib/install/init.mjs";
+import { readJson, restrictToOwner, withFileLock, writeFileAtomic, writeJsonAtomic } from "../src/lib/install/store.mjs";
+
+const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const args = process.argv.slice(2);
+const flag = (name) => {
+  const i = args.indexOf(name);
+  if (i < 0) return undefined;
+  const [, value] = args.splice(i, 2);
+  return value;
+};
+const json = args.includes("--json") ? (args.splice(args.indexOf("--json"), 1), true) : false;
+const dataOverride = flag("--data-dir");
+const { dataDir, source } = dataOverride ? { dataDir: path.resolve(dataOverride), source: "argument" } : resolveDataDir({ appRoot });
+const p = installPaths(dataDir);
+const [command, ...rest] = args;
+
+function fail(message, code = 1) {
+  console.error(`notflix: ${message}`);
+  process.exit(code);
+}
+
+function serverRunning() {
+  const status = readJson(p.listenStatusFile, null);
+  if (!status?.pid) return false;
+  try {
+    process.kill(status.pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// --- Accounts (same format as src/lib/users.ts and src/lib/auth.ts) ---------------------------
+const usersFile = path.join(p.dbDir, "users.json");
+const scryptAsync = (pw, salt, n, opts) => new Promise((res, rej) => crypto.scrypt(pw, salt, n, opts, (e, k) => (e ? rej(e) : res(k))));
+async function hashPassword(password) {
+  const N = 2 ** 17, r = 8, pp = 1;
+  const salt = crypto.randomBytes(16);
+  const hash = await scryptAsync(password.normalize("NFKC"), salt, 32, { N, r, p: pp, maxmem: 256 * N * r + 32 * 1024 * 1024 });
+  return `scrypt$${N},${r},${pp}$${salt.toString("base64url")}$${hash.toString("base64url")}`;
+}
+function findUser(data, name) {
+  const user = data.users.find((u) => u.name.toLowerCase() === String(name ?? "").toLowerCase());
+  if (!user) fail(`no account named "${name}"`);
+  return user;
+}
+
+async function accounts([sub, name, value]) {
+  const data = readJson(usersFile, { users: [] });
+  switch (sub) {
+    case "list":
+      if (!data.users.length) console.log("(no accounts yet — finish first-run setup in the browser)");
+      for (const u of data.users) console.log(`${u.name.padEnd(24)} ${(u.role ?? "user").padEnd(6)} created ${u.createdAt}`);
+      return;
+    case "reset-password": {
+      const temporary = crypto.randomBytes(9).toString("base64url");
+      const passwordHash = await hashPassword(temporary);
+      withFileLock(`${usersFile}.lock`, () => {
+        const fresh = readJson(usersFile, { users: [] });
+        fs.copyFileSync(usersFile, `${usersFile}.bak-${Date.now()}`);
+        const user = findUser(fresh, name);
+        user.passwordHash = passwordHash;
+        user.sessionVersion = (user.sessionVersion ?? 0) + 1;
+        user.passwordChangedAt = new Date().toISOString();
+        writeJsonAtomic(usersFile, fresh);
+      });
+      console.log(`Temporary password for ${name}: ${temporary}`);
+      console.log("Sign in with it and change it in Settings → Account. Other devices were signed out.");
+      return;
+    }
+    case "set-role": {
+      if (value !== "admin" && value !== "user") fail("role must be admin or user");
+      withFileLock(`${usersFile}.lock`, () => {
+        const fresh = readJson(usersFile, { users: [] });
+        const user = findUser(fresh, name);
+        if (user.role === "owner") fail("the owner's role cannot be changed");
+        user.role = value;
+        writeJsonAtomic(usersFile, fresh);
+      });
+      console.log(`${name} is now ${value === "admin" ? "an administrator" : "a member"}.`);
+      return;
+    }
+    default:
+      fail("usage: accounts list | reset-password <name> | set-role <name> admin|user");
+  }
+}
+
+// --- Moving the data directory -----------------------------------------------------------------
+function copyDir(from, to) {
+  fs.mkdirSync(to, { recursive: true });
+  for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+    const a = path.join(from, entry.name);
+    const b = path.join(to, entry.name);
+    if (entry.isSymbolicLink()) continue;
+    if (entry.isDirectory()) copyDir(a, b);
+    else fs.copyFileSync(a, b);
+  }
+}
+
+function moveData(target) {
+  if (!target) fail("usage: move-data --to <folder>");
+  const dest = path.resolve(target);
+  if (serverRunning()) fail("stop Notflix first (scripts\\notflix.ps1 stop)");
+  if (process.env.NOTFLIX_DATA_DIR) fail("NOTFLIX_DATA_DIR is set; change that variable instead");
+  if (dest.toLowerCase() === dataDir.toLowerCase()) fail("that is already the data folder");
+  if (fs.existsSync(dest) && fs.readdirSync(dest).length > 0) fail(`${dest} is not empty`);
+  const cfg = readServerConfig(dataDir);
+  for (const sub of ["config", "secrets", "db", "logs"]) {
+    const from = path.join(dataDir, sub);
+    if (fs.existsSync(from)) copyDir(from, path.join(dest, sub));
+  }
+  const code = readSetupCode(dataDir);
+  if (code) fs.copyFileSync(p.setupCodeFile, installPaths(dest).setupCodeFile);
+  // A cache that lived inside the old data folder moves with it; a custom cache stays where it is.
+  if (cfg.storage.cacheDirectory.toLowerCase() === p.defaultCacheDir.toLowerCase()) {
+    updateServerConfig(dest, (c) => {
+      c.storage.cacheDirectory = installPaths(dest).defaultCacheDir;
+    });
+  }
+  const restrictError = restrictToOwner(dest);
+  if (restrictError) console.warn(`warning: could not restrict permissions on ${dest}: ${restrictError}`);
+  writeFileAtomic(path.join(appRoot, DATA_DIR_POINTER), dest + "\n", { mode: 0o644 });
+  console.log(`Copied Notflix data to ${dest}.`);
+  console.log(`The old folder ${dataDir} was left in place as a backup; delete it once Notflix works from the new one.`);
+}
+
+// --- Commands ------------------------------------------------------------------------------------
+switch (command) {
+  case "paths": {
+    const cfg = readServerConfig(dataDir);
+    const out = { dataDir, source, ...p, cacheDirectory: cfg.storage.cacheDirectory, enginePort: readEngineConfig(dataDir).port, webPort: cfg.server.port };
+    if (json) console.log(JSON.stringify(out));
+    else for (const [k, v] of Object.entries(out)) console.log(`${k.padEnd(20)} ${v}`);
+    break;
+  }
+  case "init": {
+    let r;
+    try {
+      r = initializeInstall(dataDir);
+      ensureEngineLibraryRoot(dataDir, path.join(appRoot, "test-media"));
+    } catch (err) {
+      fail(`cannot use the data folder ${dataDir}: ${err instanceof Error ? err.message : err}`, 2);
+    }
+    const cfg = readServerConfig(dataDir);
+    const out = { ...r, webPort: cfg.server.port, bindAddress: bindAddressFor(cfg), enginePort: readEngineConfig(dataDir).port, logsDir: p.logsDir, runDir: p.runDir };
+    if (json) console.log(JSON.stringify(out));
+    else {
+      console.log(`Data folder: ${dataDir} (${source})`);
+      for (const w of r.warnings) console.log(`warning: ${w}`);
+      if (r.setupCode) console.log(`Setup code: ${r.setupCode}`);
+    }
+    break;
+  }
+  case "status": {
+    const cfg = readServerConfig(dataDir);
+    console.log(
+      JSON.stringify({
+        dataDir,
+        webPort: cfg.server.port,
+        bindAddress: bindAddressFor(cfg),
+        allowLan: cfg.server.allowLan,
+        enginePort: readEngineConfig(dataDir).port,
+        setupComplete: cfg.setup.completed,
+        setupCode: cfg.setup.completed ? null : readSetupCode(dataDir),
+        listening: readJson(p.listenStatusFile, null),
+      })
+    );
+    break;
+  }
+  case "set-port": {
+    const port = Number(rest[0]);
+    if (!validPort(port)) fail("use a port between 1024 and 65535");
+    if (port === readEngineConfig(dataDir).port) fail("that port belongs to the media engine");
+    updateServerConfig(dataDir, (c) => {
+      c.server.port = port;
+    });
+    console.log(`Web port set to ${port}.`);
+    break;
+  }
+  case "allow-lan": {
+    if (rest[0] !== "on" && rest[0] !== "off") fail("usage: allow-lan on|off");
+    updateServerConfig(dataDir, (c) => {
+      c.server.allowLan = rest[0] === "on";
+    });
+    console.log(rest[0] === "on" ? "Other devices on your network may connect." : "Only this computer may connect.");
+    break;
+  }
+  case "move-data":
+    moveData(flag("--to") ?? rest[0]);
+    break;
+  case "accounts":
+    await accounts(rest);
+    break;
+  default:
+    console.log(fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 16).map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
+    process.exit(command ? 1 : 0);
+}

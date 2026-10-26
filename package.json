@@ -1,0 +1,48 @@
+{
+  "name": "notflix-debrid",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node server.mjs --dev",
+    "build": "next build",
+    "start": "node server.mjs",
+    "lint": "eslint",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p .",
+    "test:e2e": "playwright test",
+    "test:engine": "node scripts/test-media-engine.mjs",
+    "test:install": "node scripts/test-install-e2e.mjs",
+    "engine:build": "dotnet build services/media-engine/src/Notflix.MediaEngine -c Release",
+    "engine:test": "dotnet test services/media-engine/tests/Notflix.MediaEngine.Tests",
+    "media:samples": "node scripts/generate-test-media.mjs",
+    "notflix": "node scripts/notflix-cli.mjs"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.40.0",
+    "hls.js": "^1.6.16",
+    "lucide-react": "^1.17.0",
+    "next": "16.2.7",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "sharp": "^0.34.5",
+    "tailwind-merge": "^3.6.0",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.7",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vitest": "^3.2.4"
+  },
+  "description": "Self-hosted, Real-Debrid-first streaming app with a hardware-aware media engine. Provides no media.",
+  "engines": {
+    "node": ">=22"
+  }
+}

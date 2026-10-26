@@ -1,0 +1,404 @@
+{
+  "collections": [
+    {
+      "id": "animals",
+      "label": "Animals"
+    },
+    {
+      "id": "fantasy",
+      "label": "Fantasy characters"
+    },
+    {
+      "id": "sci-fi",
+      "label": "Science fiction"
+    },
+    {
+      "id": "arcade",
+      "label": "Retro arcade"
+    },
+    {
+      "id": "space",
+      "label": "Space exploration"
+    },
+    {
+      "id": "monsters",
+      "label": "Friendly monsters"
+    },
+    {
+      "id": "mythical",
+      "label": "Mythical creatures"
+    },
+    {
+      "id": "portraits",
+      "label": "Portraits"
+    },
+    {
+      "id": "abstract",
+      "label": "Abstract art"
+    }
+  ],
+  "avatars": [
+    {
+      "id": "v2-animals-fox",
+      "collection": "animals",
+      "label": "Fox",
+      "src": "/avatars/v2/v2-animals-fox.webp"
+    },
+    {
+      "id": "v2-animals-owl",
+      "collection": "animals",
+      "label": "Owl",
+      "src": "/avatars/v2/v2-animals-owl.webp"
+    },
+    {
+      "id": "v2-animals-panda",
+      "collection": "animals",
+      "label": "Panda",
+      "src": "/avatars/v2/v2-animals-panda.webp"
+    },
+    {
+      "id": "v2-animals-lion",
+      "collection": "animals",
+      "label": "Lion",
+      "src": "/avatars/v2/v2-animals-lion.webp"
+    },
+    {
+      "id": "v2-fantasy-wizard",
+      "collection": "fantasy",
+      "label": "Wizard",
+      "src": "/avatars/v2/v2-fantasy-wizard.webp"
+    },
+    {
+      "id": "v2-fantasy-elf",
+      "collection": "fantasy",
+      "label": "Elf ranger",
+      "src": "/avatars/v2/v2-fantasy-elf.webp"
+    },
+    {
+      "id": "v2-fantasy-knight",
+      "collection": "fantasy",
+      "label": "Knight",
+      "src": "/avatars/v2/v2-fantasy-knight.webp"
+    },
+    {
+      "id": "v2-fantasy-rogue",
+      "collection": "fantasy",
+      "label": "Hooded rogue",
+      "src": "/avatars/v2/v2-fantasy-rogue.webp"
+    },
+    {
+      "id": "v2-sci-fi-android",
+      "collection": "sci-fi",
+      "label": "Android",
+      "src": "/avatars/v2/v2-sci-fi-android.webp"
+    },
+    {
+      "id": "v2-sci-fi-alien",
+      "collection": "sci-fi",
+      "label": "Alien envoy",
+      "src": "/avatars/v2/v2-sci-fi-alien.webp"
+    },
+    {
+      "id": "v2-sci-fi-pilot",
+      "collection": "sci-fi",
+      "label": "Star pilot",
+      "src": "/avatars/v2/v2-sci-fi-pilot.webp"
+    },
+    {
+      "id": "v2-sci-fi-mech",
+      "collection": "sci-fi",
+      "label": "Mech",
+      "src": "/avatars/v2/v2-sci-fi-mech.webp"
+    },
+    {
+      "id": "v2-arcade-knight",
+      "collection": "arcade",
+      "label": "Pixel knight",
+      "src": "/avatars/v2/v2-arcade-knight.webp"
+    },
+    {
+      "id": "v2-arcade-cat",
+      "collection": "arcade",
+      "label": "Pixel cat",
+      "src": "/avatars/v2/v2-arcade-cat.webp"
+    },
+    {
+      "id": "v2-arcade-robot",
+      "collection": "arcade",
+      "label": "Pixel robot",
+      "src": "/avatars/v2/v2-arcade-robot.webp"
+    },
+    {
+      "id": "v2-arcade-frog",
+      "collection": "arcade",
+      "label": "Pixel frog",
+      "src": "/avatars/v2/v2-arcade-frog.webp"
+    },
+    {
+      "id": "v2-space-astronaut",
+      "collection": "space",
+      "label": "Astronaut",
+      "src": "/avatars/v2/v2-space-astronaut.webp"
+    },
+    {
+      "id": "v2-space-planetfall",
+      "collection": "space",
+      "label": "Planetfall",
+      "src": "/avatars/v2/v2-space-planetfall.webp"
+    },
+    {
+      "id": "v2-space-launch",
+      "collection": "space",
+      "label": "Lift-off",
+      "src": "/avatars/v2/v2-space-launch.webp"
+    },
+    {
+      "id": "v2-space-earthrise",
+      "collection": "space",
+      "label": "Earthrise",
+      "src": "/avatars/v2/v2-space-earthrise.webp"
+    },
+    {
+      "id": "v2-monsters-cyclops",
+      "collection": "monsters",
+      "label": "Cyclops",
+      "src": "/avatars/v2/v2-monsters-cyclops.webp"
+    },
+    {
+      "id": "v2-monsters-hornbeast",
+      "collection": "monsters",
+      "label": "Horn beast",
+      "src": "/avatars/v2/v2-monsters-hornbeast.webp"
+    },
+    {
+      "id": "v2-monsters-blobby",
+      "collection": "monsters",
+      "label": "Blobby",
+      "src": "/avatars/v2/v2-monsters-blobby.webp"
+    },
+    {
+      "id": "v2-monsters-wisp",
+      "collection": "monsters",
+      "label": "Wisp",
+      "src": "/avatars/v2/v2-monsters-wisp.webp"
+    },
+    {
+      "id": "v2-mythical-dragon",
+      "collection": "mythical",
+      "label": "Dragon",
+      "src": "/avatars/v2/v2-mythical-dragon.webp"
+    },
+    {
+      "id": "v2-mythical-phoenix",
+      "collection": "mythical",
+      "label": "Phoenix",
+      "src": "/avatars/v2/v2-mythical-phoenix.webp"
+    },
+    {
+      "id": "v2-mythical-unicorn",
+      "collection": "mythical",
+      "label": "Unicorn",
+      "src": "/avatars/v2/v2-mythical-unicorn.webp"
+    },
+    {
+      "id": "v2-mythical-serpent",
+      "collection": "mythical",
+      "label": "Sea serpent",
+      "src": "/avatars/v2/v2-mythical-serpent.webp"
+    },
+    {
+      "id": "v2-portraits-curls",
+      "collection": "portraits",
+      "label": "Golden hour",
+      "src": "/avatars/v2/v2-portraits-curls.webp"
+    },
+    {
+      "id": "v2-portraits-beard",
+      "collection": "portraits",
+      "label": "The professor",
+      "src": "/avatars/v2/v2-portraits-beard.webp"
+    },
+    {
+      "id": "v2-portraits-headphones",
+      "collection": "portraits",
+      "label": "Night owl",
+      "src": "/avatars/v2/v2-portraits-headphones.webp"
+    },
+    {
+      "id": "v2-portraits-cap",
+      "collection": "portraits",
+      "label": "Sunny",
+      "src": "/avatars/v2/v2-portraits-cap.webp"
+    },
+    {
+      "id": "v2-abstract-aurora",
+      "collection": "abstract",
+      "label": "Aurora",
+      "src": "/avatars/v2/v2-abstract-aurora.webp"
+    },
+    {
+      "id": "v2-abstract-liquid",
+      "collection": "abstract",
+      "label": "Liquid",
+      "src": "/avatars/v2/v2-abstract-liquid.webp"
+    },
+    {
+      "id": "v2-abstract-bauhaus",
+      "collection": "abstract",
+      "label": "Bauhaus",
+      "src": "/avatars/v2/v2-abstract-bauhaus.webp"
+    },
+    {
+      "id": "v2-abstract-synthsun",
+      "collection": "abstract",
+      "label": "Synth sun",
+      "src": "/avatars/v2/v2-abstract-synthsun.webp"
+    }
+  ],
+  "legacy": [
+    {
+      "id": "abstract-orbs",
+      "src": "/avatars/abstract-orbs.svg"
+    },
+    {
+      "id": "abstract-prism",
+      "src": "/avatars/abstract-prism.svg"
+    },
+    {
+      "id": "abstract-ribbons",
+      "src": "/avatars/abstract-ribbons.svg"
+    },
+    {
+      "id": "abstract-rings",
+      "src": "/avatars/abstract-rings.svg"
+    },
+    {
+      "id": "animals-cat",
+      "src": "/avatars/animals-cat.svg"
+    },
+    {
+      "id": "animals-fox",
+      "src": "/avatars/animals-fox.svg"
+    },
+    {
+      "id": "animals-owl",
+      "src": "/avatars/animals-owl.svg"
+    },
+    {
+      "id": "animals-panda",
+      "src": "/avatars/animals-panda.svg"
+    },
+    {
+      "id": "cartoons-blob",
+      "src": "/avatars/cartoons-blob.svg"
+    },
+    {
+      "id": "cartoons-cloud",
+      "src": "/avatars/cartoons-cloud.svg"
+    },
+    {
+      "id": "cartoons-donut",
+      "src": "/avatars/cartoons-donut.svg"
+    },
+    {
+      "id": "cartoons-sunny",
+      "src": "/avatars/cartoons-sunny.svg"
+    },
+    {
+      "id": "fantasy-dragon",
+      "src": "/avatars/fantasy-dragon.svg"
+    },
+    {
+      "id": "fantasy-potion",
+      "src": "/avatars/fantasy-potion.svg"
+    },
+    {
+      "id": "fantasy-unicorn",
+      "src": "/avatars/fantasy-unicorn.svg"
+    },
+    {
+      "id": "fantasy-wizard",
+      "src": "/avatars/fantasy-wizard.svg"
+    },
+    {
+      "id": "minimal-arch",
+      "src": "/avatars/minimal-arch.svg"
+    },
+    {
+      "id": "minimal-dot",
+      "src": "/avatars/minimal-dot.svg"
+    },
+    {
+      "id": "minimal-smile",
+      "src": "/avatars/minimal-smile.svg"
+    },
+    {
+      "id": "minimal-stripes",
+      "src": "/avatars/minimal-stripes.svg"
+    },
+    {
+      "id": "nature-leaf",
+      "src": "/avatars/nature-leaf.svg"
+    },
+    {
+      "id": "nature-mountain",
+      "src": "/avatars/nature-mountain.svg"
+    },
+    {
+      "id": "nature-mushroom",
+      "src": "/avatars/nature-mushroom.svg"
+    },
+    {
+      "id": "nature-wave",
+      "src": "/avatars/nature-wave.svg"
+    },
+    {
+      "id": "retro-bot",
+      "src": "/avatars/retro-bot.svg"
+    },
+    {
+      "id": "retro-controller",
+      "src": "/avatars/retro-controller.svg"
+    },
+    {
+      "id": "retro-heart",
+      "src": "/avatars/retro-heart.svg"
+    },
+    {
+      "id": "retro-slime",
+      "src": "/avatars/retro-slime.svg"
+    },
+    {
+      "id": "sci-fi-alien",
+      "src": "/avatars/sci-fi-alien.svg"
+    },
+    {
+      "id": "sci-fi-android",
+      "src": "/avatars/sci-fi-android.svg"
+    },
+    {
+      "id": "sci-fi-robot",
+      "src": "/avatars/sci-fi-robot.svg"
+    },
+    {
+      "id": "sci-fi-ufo",
+      "src": "/avatars/sci-fi-ufo.svg"
+    },
+    {
+      "id": "space-astronaut",
+      "src": "/avatars/space-astronaut.svg"
+    },
+    {
+      "id": "space-moon",
+      "src": "/avatars/space-moon.svg"
+    },
+    {
+      "id": "space-planet",
+      "src": "/avatars/space-planet.svg"
+    },
+    {
+      "id": "space-rocket",
+      "src": "/avatars/space-rocket.svg"
+    }
+  ]
+}
