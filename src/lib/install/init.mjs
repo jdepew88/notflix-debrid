@@ -4,7 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { installPaths } from "./paths.mjs";
+import { existingInstallProblem, installPaths, recoveryMessage } from "./paths.mjs";
 import { readServerConfig, updateEngineConfig, updateServerConfig } from "./config.mjs";
 import { ensureInstallSecrets } from "./secrets.mjs";
 import { defaultProtection, protectionLabel } from "./protect.mjs";
@@ -39,12 +39,68 @@ export function removeSetupCode(dataDir) {
   fs.rmSync(installPaths(dataDir).setupCodeFile, { force: true });
 }
 
+/** The data folder holds (or should hold) an installation that cannot be opened safely. */
+export class InstallUnavailableError extends Error {
+  /** @param {string} dataDir @param {string} reason */
+  constructor(dataDir, reason) {
+    super(recoveryMessage(dataDir, reason));
+    this.name = "InstallUnavailableError";
+    this.reason = reason;
+  }
+}
+
+/** @param {string} file @returns {{ ok: true, value: any } | { ok: false, error: string } | null} */
+function strictJson(file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch (err) {
+    if (/** @type {NodeJS.ErrnoException} */ (err).code === "ENOENT") return null;
+    return { ok: false, error: /** @type {Error} */ (err).message };
+  }
+  try {
+    return { ok: true, value: JSON.parse(text) };
+  } catch (err) {
+    return { ok: false, error: `not valid JSON (${/** @type {Error} */ (err).message})` };
+  }
+}
+
+/**
+ * Refuses to open a data folder whose settings or accounts are unreadable or inconsistent. Without
+ * this, an unreadable server.json reads as "defaults" (setup not completed) and the first-run
+ * wizard would open over an existing installation and later overwrite its settings.
+ * @param {string} dataDir
+ * @param {{ expectExisting?: boolean }} [opts] expectExisting: the folder was remembered from an
+ *   earlier run (not chosen just now), so a missing installation is an error, not a fresh start.
+ */
+export function assertInstallUsable(dataDir, opts = {}) {
+  const p = installPaths(dataDir);
+  if (opts.expectExisting) {
+    const problem = existingInstallProblem(dataDir);
+    if (problem) throw new InstallUnavailableError(p.dataDir, problem);
+  }
+  const server = strictJson(p.serverConfigFile);
+  if (server && !server.ok) throw new InstallUnavailableError(p.dataDir, `the settings file ${p.serverConfigFile} cannot be read: ${server.error}`);
+  const users = strictJson(p.usersFile);
+  if (users && !users.ok) throw new InstallUnavailableError(p.dataDir, `the account database ${p.usersFile} cannot be read: ${users.error}`);
+  const list = users?.ok && Array.isArray(users.value?.users) ? users.value.users : null;
+  if (users?.ok && !list) throw new InstallUnavailableError(p.dataDir, `the account database ${p.usersFile} has an unexpected format`);
+  if (server?.ok && server.value?.setup?.completed === true && !list?.some((/** @type {any} */ u) => u?.role === "owner")) {
+    throw new InstallUnavailableError(p.dataDir, `setup was completed, but the account database ${p.usersFile} ${users ? "has no owner account" : "is missing"}`);
+  }
+  if (!server && list && list.length > 0) {
+    throw new InstallUnavailableError(p.dataDir, `accounts exist, but the settings file ${p.serverConfigFile} is missing`);
+  }
+}
+
 /**
  * @param {string} dataDir
+ * @param {{ expectExisting?: boolean }} [opts] see assertInstallUsable
  * @returns {{ dataDir: string, setupComplete: boolean, ownerExists: boolean, setupCode: string | null, warnings: string[], created: boolean }}
  */
-export function initializeInstall(dataDir) {
+export function initializeInstall(dataDir, opts = {}) {
   const p = installPaths(dataDir);
+  assertInstallUsable(dataDir, opts);
   const warnings = [];
   const created = !fs.existsSync(p.serverConfigFile);
   for (const dir of [p.dataDir, p.configDir, p.secretsDir, p.dbDir, p.logsDir, p.runDir]) {

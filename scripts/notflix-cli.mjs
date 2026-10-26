@@ -14,16 +14,20 @@
 //   node scripts/notflix-cli.mjs credentials status          how stored credentials are protected (no values)
 //   node scripts/notflix-cli.mjs credentials rotate-key      re-encrypt them under a new key
 //   node scripts/notflix-cli.mjs credentials clear           forget TMDB/Real-Debrid/addon credentials
+//   node scripts/notflix-cli.mjs remember-data-dir <folder>  later starts reopen this data folder
+//   node scripts/notflix-cli.mjs canonical-paths <path>...   full long paths (JSON; for the launcher)
 //
-// The data directory is NOTFLIX_DATA_DIR, else the folder chosen with move-data, else the OS default
-// (%ProgramData%\NotflixDebrid on Windows). Pass --data-dir <folder> to override for one command.
+// The data directory is NOTFLIX_DATA_DIR, else the folder this installation used last (remembered in
+// .notflix-data-dir by the launcher and move-data), else the OS default (%ProgramData%\NotflixDebrid
+// on Windows). Pass --data-dir <folder> to override for one command. A remembered folder that is
+// missing or incomplete is an error (exit code 4), never a silent fresh start.
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { DATA_DIR_POINTER, installPaths, resolveDataDir } from "../src/lib/install/paths.mjs";
+import { DATA_DIR_POINTER, existingInstallProblem, installPaths, recoveryMessage, resolveDataDir } from "../src/lib/install/paths.mjs";
 import { bindAddressFor, ensureEngineLibraryRoot, readEngineConfig, readServerConfig, updateEngineConfig, updateServerConfig, validPort } from "../src/lib/install/config.mjs";
-import { initializeInstall, readSetupCode } from "../src/lib/install/init.mjs";
+import { InstallUnavailableError, initializeInstall, readSetupCode } from "../src/lib/install/init.mjs";
 import { readSecrets, rotateSecretsKey, secretsStatus, updateSecrets } from "../src/lib/install/secrets.mjs";
 import { readJson, restrictToOwner, withFileLock, writeFileAtomic, writeJsonAtomic } from "../src/lib/install/store.mjs";
 
@@ -37,9 +41,16 @@ const flag = (name) => {
 };
 const json = args.includes("--json") ? (args.splice(args.indexOf("--json"), 1), true) : false;
 const dataOverride = flag("--data-dir");
-const { dataDir, source } = dataOverride ? { dataDir: path.resolve(dataOverride), source: "argument" } : resolveDataDir({ appRoot });
+const resolved = dataOverride ? { dataDir: path.resolve(dataOverride), source: "argument" } : resolveDataDir({ appRoot });
+const { dataDir, source } = resolved;
 const p = installPaths(dataDir);
 const [command, ...rest] = args;
+const pointerFile = path.join(appRoot, DATA_DIR_POINTER);
+// The remembered folder must still hold this installation (see paths.mjs existingInstallProblem).
+const dataDirProblem = resolved.problem ?? (source === "pointer" ? existingInstallProblem(dataDir) : null);
+if (dataDirProblem && !["paths", "status", "remember-data-dir", "canonical-paths", undefined].includes(command)) {
+  fail(recoveryMessage(dataDir, dataDirProblem), 4);
+}
 
 function fail(message, code = 1) {
   console.error(`notflix: ${message}`);
@@ -191,11 +202,20 @@ function moveData(target) {
   console.log(`The old folder ${dataDir} was left in place as a backup; delete it once Notflix works from the new one.`);
 }
 
+/** Full, long form of a path (expands 8.3 short names, resolves junctions) when it exists. */
+function canonical(p) {
+  try {
+    return fs.realpathSync.native(path.resolve(p));
+  } catch {
+    return path.resolve(p);
+  }
+}
+
 // --- Commands ------------------------------------------------------------------------------------
 switch (command) {
   case "paths": {
     const cfg = readServerConfig(dataDir);
-    const out = { dataDir, source, ...p, cacheDirectory: cfg.storage.cacheDirectory, enginePort: readEngineConfig(dataDir).port, webPort: cfg.server.port };
+    const out = { dataDir, source, problem: dataDirProblem, recovery: dataDirProblem ? recoveryMessage(dataDir, dataDirProblem) : null, pointerFile, ...p, cacheDirectory: cfg.storage.cacheDirectory, enginePort: readEngineConfig(dataDir).port, webPort: cfg.server.port };
     if (json) console.log(JSON.stringify(out));
     else for (const [k, v] of Object.entries(out)) console.log(`${k.padEnd(20)} ${v}`);
     break;
@@ -203,13 +223,14 @@ switch (command) {
   case "init": {
     let r;
     try {
-      r = initializeInstall(dataDir);
+      r = initializeInstall(dataDir, { expectExisting: source === "pointer" });
       ensureEngineLibraryRoot(dataDir, path.join(appRoot, "test-media"));
     } catch (err) {
+      if (err instanceof InstallUnavailableError) fail(err.message, 4);
       fail(`cannot use the data folder ${dataDir}: ${err instanceof Error ? err.message : err}`, 2);
     }
     const cfg = readServerConfig(dataDir);
-    const out = { ...r, webPort: cfg.server.port, bindAddress: bindAddressFor(cfg), enginePort: readEngineConfig(dataDir).port, logsDir: p.logsDir, runDir: p.runDir };
+    const out = { ...r, source, webPort: cfg.server.port, bindAddress: bindAddressFor(cfg), enginePort: readEngineConfig(dataDir).port, logsDir: p.logsDir, runDir: p.runDir };
     if (json) console.log(JSON.stringify(out));
     else {
       console.log(`Data folder: ${dataDir} (${source})`);
@@ -223,6 +244,9 @@ switch (command) {
     console.log(
       JSON.stringify({
         dataDir,
+        dataDirSource: source,
+        problem: dataDirProblem,
+        runDir: p.runDir,
         webPort: cfg.server.port,
         bindAddress: bindAddressFor(cfg),
         allowLan: cfg.server.allowLan,
@@ -268,6 +292,27 @@ switch (command) {
     break;
   case "credentials":
     credentials(rest);
+    break;
+  case "remember-data-dir": {
+    // The launcher calls this after a successful start, so the next start (without -DataDir)
+    // reopens the same installation instead of the OS default.
+    if (!rest[0] || !path.isAbsolute(rest[0])) fail("usage: remember-data-dir <full folder path>");
+    const target = canonical(rest[0]);
+    const problem = existingInstallProblem(target);
+    if (problem) fail(`not remembering ${target}: ${problem}`);
+    let previous = null;
+    try {
+      previous = fs.readFileSync(pointerFile, "utf8").trim() || null;
+    } catch {
+      /* none yet */
+    }
+    const changed = !previous || previous.toLowerCase() !== target.toLowerCase();
+    if (changed) writeFileAtomic(pointerFile, target + "\n", { mode: 0o644 });
+    console.log(JSON.stringify({ previous, current: target, changed }));
+    break;
+  }
+  case "canonical-paths":
+    console.log(JSON.stringify(rest.map(canonical)));
     break;
   default:
     console.log(fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 20).map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));

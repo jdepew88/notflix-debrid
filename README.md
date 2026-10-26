@@ -38,7 +38,8 @@ device can't play directly — using whatever graphics hardware you have, or non
 5. The wizard tests your graphics card automatically. Press **Finish setup** and start browsing.
 
 `Stop-Notflix.cmd` stops it; `Start-Notflix.cmd` starts it again (straight to the sign-in page
-once setup is done). No `.env` files to edit and no commands to type.
+once setup is done); `Restart-Notflix.cmd` and `Status-Notflix.cmd` do what they say. No `.env`
+files to edit and no commands to type.
 
 **With Git instead of the ZIP:** `git clone https://github.com/jdepew88/notflix-debrid.git`, then the
 same double-clicks. Git is optional and only makes updating easier.
@@ -81,6 +82,7 @@ services/media-engine      .NET 10 media engine (probing, decisions, FFmpeg, HLS
 Setup-Notflix.cmd          install prerequisites (WinGet) and build: setup.ps1 + requirements.winget
 Start-Notflix.cmd          start web server + engine, open the browser (wizard until setup is done)
 Stop-Notflix.cmd           stop this installation's web server and engine
+Restart-Notflix.cmd        stop + start;  Status-Notflix.cmd: processes, address, data folder
 scripts/notflix.ps1        launcher behind the .cmd files (setup/start/stop/status/logs/test)
 scripts/notflix-cli.mjs    offline maintenance (paths, port, move data, account recovery)
 ```

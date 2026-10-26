@@ -44,23 +44,62 @@ function canWriteParent(dir) {
 }
 
 /**
- * Data directory for this process: NOTFLIX_DATA_DIR, then the pointer file written when the owner
- * moved the data directory during setup, then the OS default.
+ * Data directory for this process: NOTFLIX_DATA_DIR, then the pointer file in the application
+ * folder (the data folder this installation used last: written by the launcher and by move-data),
+ * then the OS default.
+ *
+ * A pointer that exists but cannot be used is reported as `problem` instead of falling back to the
+ * default: falling back would quietly open an empty installation and the first-run wizard.
  * @param {{ env?: Record<string, string | undefined>, appRoot?: string }} [opts]
- * @returns {{ dataDir: string, source: "env" | "pointer" | "default" }}
+ * @returns {{ dataDir: string, source: "env" | "pointer" | "default", problem?: string }}
  */
 export function resolveDataDir(opts = {}) {
   const env = opts.env ?? process.env;
   const fromEnv = env.NOTFLIX_DATA_DIR?.trim();
   if (fromEnv) return { dataDir: path.resolve(fromEnv), source: "env" };
   const appRoot = opts.appRoot ?? process.cwd();
+  const pointerFile = path.join(appRoot, DATA_DIR_POINTER);
+  let pointed;
   try {
-    const pointed = fs.readFileSync(path.join(appRoot, DATA_DIR_POINTER), "utf8").trim();
-    if (pointed && path.isAbsolute(pointed)) return { dataDir: path.resolve(pointed), source: "pointer" };
-  } catch {
-    /* no pointer */
+    pointed = fs.readFileSync(pointerFile, "utf8").trim();
+  } catch (err) {
+    if (/** @type {NodeJS.ErrnoException} */ (err).code !== "ENOENT") {
+      return { dataDir: defaultDataDir(), source: "pointer", problem: `${pointerFile} cannot be read (${/** @type {Error} */ (err).message})` };
+    }
+    return { dataDir: defaultDataDir(), source: "default" };
   }
-  return { dataDir: defaultDataDir(), source: "default" };
+  if (!pointed || !path.isAbsolute(pointed)) {
+    return { dataDir: defaultDataDir(), source: "pointer", problem: `${pointerFile} does not contain a full folder path` };
+  }
+  return { dataDir: path.resolve(pointed), source: "pointer" };
+}
+
+/**
+ * Why a data folder that should hold an existing installation cannot be opened, or null. Used for
+ * the remembered folder (a pointer): a missing folder there means an unplugged drive, a renamed
+ * folder or lost data, never "start over".
+ * @param {string} dataDir
+ * @returns {string | null}
+ */
+export function existingInstallProblem(dataDir) {
+  const p = installPaths(dataDir);
+  if (!fs.existsSync(p.dataDir)) return `the folder ${p.dataDir} does not exist (is the drive connected?)`;
+  if (!fs.existsSync(p.serverConfigFile)) return `${p.serverConfigFile} is missing`;
+  return null;
+}
+
+/**
+ * Text shown when the installation's data folder cannot be opened. Nothing has been changed.
+ * @param {string} dataDir @param {string} reason
+ */
+export function recoveryMessage(dataDir, reason) {
+  return [
+    `Notflix cannot open its data folder ${dataDir}: ${reason}.`,
+    "Nothing was changed and no new installation was created.",
+    "- If the folder is on a removable or network drive, connect it and start Notflix again.",
+    "- If you moved or renamed the folder, start Notflix with its new location: Start-Notflix.cmd -DataDir \"<folder>\"",
+    "- To deliberately start over with a new, empty installation: Start-Notflix.cmd -DataDir \"<new folder>\"",
+  ].join("\n");
 }
 
 /**
@@ -85,6 +124,7 @@ export function installPaths(dataDir) {
     engineSecretFile: path.join(root, "secrets", "engine-secret"),
     setupCodeFile: path.join(root, "setup-code.txt"),
     listenStatusFile: path.join(root, "run", "listen-status.json"),
+    usersFile: path.join(root, "db", "users.json"),
   };
 }
 

@@ -15,9 +15,11 @@ Nothing that Notflix writes at runtime goes into the program folder (apart from 
 
 Resolved in this order:
 
-1. the `NOTFLIX_DATA_DIR` environment variable (the launcher's `-DataDir` sets it for one run);
-2. the pointer file `.notflix-data-dir` in the program folder, written by
-   `scripts\notflix.ps1 move-data -To <folder>`;
+1. the `NOTFLIX_DATA_DIR` environment variable (also set by the launcher's `-DataDir`);
+2. the pointer file `.notflix-data-dir` in the program folder: the data folder this installation
+   used last. The launcher writes it after a successful start with `-DataDir <folder>` (or with the
+   OS default when nothing was remembered yet), and `move-data` writes it. A `NOTFLIX_DATA_DIR` you
+   set yourself is not remembered;
 3. the OS default:
    - Windows: `%ProgramData%\NotflixDebrid`
    - Linux: `/var/lib/notflix-debrid` when writable (system service), else `$XDG_DATA_HOME/notflix-debrid`
@@ -28,6 +30,22 @@ Resolved in this order:
 `move-data` requires Notflix to be stopped; it copies settings, credentials, accounts and logs to an
 empty target folder, moves the default cache location with it, writes the pointer, and leaves the
 old folder in place as a backup.
+
+Because the folder is remembered, `Start-Notflix.cmd`, `Stop-Notflix.cmd`, `Restart-Notflix.cmd`
+and `Status-Notflix.cmd` without `-DataDir` always open the same installation, so a restart never
+lands in an empty default folder and the setup wizard.
+
+**An existing installation is never replaced silently.** Notflix refuses to start, with a recovery
+message and without creating or changing anything, when:
+
+- the remembered folder is missing (unplugged drive, renamed folder) or has no `config\server.json`;
+- `.notflix-data-dir` does not contain a full path;
+- `config\server.json` or `db\users.json` cannot be read (damaged file);
+- setup was completed but the account database is missing or has no owner;
+- accounts exist but `config\server.json` is missing.
+
+Reconnect or restore the folder, or start with `-DataDir <folder>` to choose one explicitly (an
+empty or new folder starts a new installation, and the launcher says so).
 
 ## Layout of the data folder
 

@@ -5,15 +5,17 @@
 //  - when the owner changes the port or LAN access, it moves to the new address by itself;
 //  - it stops cleanly when the launcher asks (run/web.stop) or on Ctrl+C.
 //
-// Usage: node server.mjs [--dev]      (the launcher scripts/notflix.ps1 runs this)
+// Usage: node server.mjs [--dev] [--data-dir <folder>]      (the launcher scripts/notflix.ps1 runs this)
+// The launcher always passes --data-dir: it is also how it recognises which installation a running
+// server belongs to (the process command line), long after the window that started it has closed.
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import next from "next";
-import { installPaths, resolveDataDir } from "./src/lib/install/paths.mjs";
+import { installPaths, recoveryMessage, resolveDataDir } from "./src/lib/install/paths.mjs";
 import { bindAddressFor, ensureEngineLibraryRoot, readServerConfig } from "./src/lib/install/config.mjs";
-import { initializeInstall } from "./src/lib/install/init.mjs";
+import { InstallUnavailableError, initializeInstall } from "./src/lib/install/init.mjs";
 import { writeJsonAtomic } from "./src/lib/install/store.mjs";
 
 const appRoot = path.dirname(fileURLToPath(import.meta.url));
@@ -21,7 +23,13 @@ const dev = process.argv.includes("--dev");
 process.env.NODE_ENV ??= dev ? "development" : "production";
 process.env.NEXT_TELEMETRY_DISABLED ??= "1";
 
-const { dataDir, source } = resolveDataDir({ appRoot });
+const dataDirArg = process.argv.indexOf("--data-dir");
+if (dataDirArg > 0 && process.argv[dataDirArg + 1]) process.env.NOTFLIX_DATA_DIR = process.argv[dataDirArg + 1];
+const { dataDir, source, problem } = resolveDataDir({ appRoot });
+if (problem) {
+  console.error(`[notflix] ${recoveryMessage(dataDir, problem)}`);
+  process.exit(2);
+}
 // Everything in this process (and the engine the launcher starts) agrees on one data directory.
 process.env.NOTFLIX_DATA_DIR = dataDir;
 const paths = installPaths(dataDir);
@@ -32,9 +40,14 @@ function log(...args) {
 
 let init;
 try {
-  init = initializeInstall(dataDir);
+  // A remembered folder must already hold an installation; never start over in it silently.
+  init = initializeInstall(dataDir, { expectExisting: source === "pointer" });
   ensureEngineLibraryRoot(dataDir, path.join(appRoot, "test-media"));
 } catch (err) {
+  if (err instanceof InstallUnavailableError) {
+    console.error(`[notflix] ${err.message}`);
+    process.exit(2);
+  }
   console.error(`[notflix] Cannot use the data directory ${dataDir}: ${err instanceof Error ? err.message : err}`);
   console.error("[notflix] Choose another one with NOTFLIX_DATA_DIR or scripts\\notflix.ps1 -DataDir <folder>.");
   process.exit(2);

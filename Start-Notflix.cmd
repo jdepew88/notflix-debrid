@@ -2,6 +2,7 @@
 rem Double-click to start Notflix (media engine + web server) and open it in your browser.
 rem Opens first-run setup until it is finished; afterwards the normal sign-in page.
 rem Optional: Start-Notflix.cmd -Port 8430   (use another port)   -NoBrowser   -DataDir <folder>
+rem The data folder is remembered: later starts, stops and restarts use it without -DataDir.
 setlocal
 set "NOTFLIX_HOME=%~dp0"
 cd /d "%NOTFLIX_HOME%"
