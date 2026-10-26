@@ -2,11 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { DATA_DIR_POINTER, cacheDirProblem, defaultDataDir, installPaths, resolveDataDir } from "./paths.mjs";
+import { DATA_DIR_POINTER, cacheDirProblem, defaultDataDir, existingInstallProblem, installPaths, recoveryMessage, resolveDataDir } from "./paths.mjs";
 import { DEFAULT_WEB_PORT, bindAddressFor, normalizeServerConfig, readEngineConfig, readServerConfig, updateEngineConfig, updateServerConfig } from "./config.mjs";
 import { ensureInstallSecrets, readEngineSecret, readSecrets, rotateSecretsKey, secretHint, secretsStatus, updateSecrets } from "./secrets.mjs";
-import { initializeInstall, readSetupCode } from "./init.mjs";
+import { InstallUnavailableError, initializeInstall, readSetupCode } from "./init.mjs";
 import { withFileLock } from "./store.mjs";
+import { instanceId } from "./identity.mjs";
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "notflix-install-"));
 afterAll(() => fs.rmSync(scratch, { recursive: true, force: true }));
@@ -32,9 +33,22 @@ describe("storage paths", () => {
     fs.writeFileSync(path.join(app, DATA_DIR_POINTER), pointed + "\n");
     expect(resolveDataDir({ env: {}, appRoot: app })).toEqual({ dataDir: path.resolve(pointed), source: "pointer" });
     expect(resolveDataDir({ env: { NOTFLIX_DATA_DIR: path.join(scratch, "env-data") }, appRoot: app }).source).toBe("env");
-    // A relative pointer (hand-edited) is ignored rather than resolved against an unknown cwd.
+    // A relative or empty pointer (hand-edited) is reported, never resolved against an unknown cwd
+    // and never replaced by the default (that would open an empty installation and the wizard).
     fs.writeFileSync(path.join(app, DATA_DIR_POINTER), "relative/dir");
-    expect(resolveDataDir({ env: {}, appRoot: app }).source).toBe("default");
+    expect(resolveDataDir({ env: {}, appRoot: app })).toMatchObject({ source: "pointer", problem: expect.stringContaining("full folder path") });
+    fs.writeFileSync(path.join(app, DATA_DIR_POINTER), "  \n");
+    expect(resolveDataDir({ env: {}, appRoot: app }).problem).toBeTruthy();
+  });
+
+  it("report a remembered data folder that is gone or incomplete", () => {
+    const data = path.join(scratch, "remembered-data");
+    expect(existingInstallProblem(data)).toMatch(/does not exist/);
+    fs.mkdirSync(data, { recursive: true });
+    expect(existingInstallProblem(data)).toMatch(/server\.json is missing/);
+    initializeInstall(data);
+    expect(existingInstallProblem(data)).toBeNull();
+    expect(recoveryMessage(data, "x")).toMatch(/Nothing was changed and no new installation was created/);
   });
 
   it("refuse cache folders that could delete settings, accounts, credentials or the app", () => {
@@ -70,6 +84,27 @@ describe("server config", () => {
     expect(cfg.setup.completed).toBe(false);
     expect(cfg.accounts.allowSignup).toBe(false);
     expect(cfg.debrid.sources).toEqual({ torrentio: true, peerflix: false, custom: false });
+  });
+
+  it("keeps the LAN announcement settings of existing installations working", () => {
+    const data = fresh("cfg-advertise");
+    // A config written before these settings existed: announced (while LAN access is on) under the computer's name.
+    const old = normalizeServerConfig({ server: { port: 8420, allowLan: true } }, data);
+    expect(old.server).toMatchObject({ port: 8420, allowLan: true, name: "", advertise: true });
+    const cfg = normalizeServerConfig({ server: { name: "  Den.PC ", advertise: "no" } }, data);
+    expect(cfg.server.name).toBe("Den PC");
+    expect(cfg.server.advertise).toBe(true);
+    expect(normalizeServerConfig({ server: { advertise: false } }, data).server.advertise).toBe(false);
+    expect(normalizeServerConfig({ server: { name: 42 } }, data).server.name).toBe("");
+  });
+
+  it("gives every data folder one stable random instance ID", () => {
+    const data = fresh("cfg-instance");
+    initializeInstall(data);
+    const id = instanceId(data);
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(instanceId(data)).toBe(id);
+    expect(instanceId(fresh("cfg-instance-other"))).not.toBe(id);
   });
 
   it("listens on loopback only until LAN access is allowed", () => {
@@ -213,6 +248,69 @@ describe("first start", () => {
     fs.writeFileSync(path.join(data, "db", "users.json"), JSON.stringify({ users: [{ id: "x", name: "o", role: "owner" }] }));
     expect(initializeInstall(data).setupCode).toBeNull();
     expect(readSetupCode(data)).toBeNull();
+  });
+});
+
+describe("reopening an existing installation", () => {
+  /** A completed installation: owner account, setup finished, a provider setting. */
+  const completed = (name: string) => {
+    const data = path.join(scratch, name);
+    initializeInstall(data);
+    fs.writeFileSync(path.join(data, "db", "users.json"), JSON.stringify({ users: [{ id: "x", name: "owner", role: "owner" }] }));
+    updateServerConfig(data, (c) => {
+      c.setup.completed = true;
+      c.debrid.validatedAt = "2026-10-26T00:00:00.000Z";
+    });
+    return data;
+  };
+
+  it("keeps setup, accounts and provider settings on every restart", () => {
+    const data = completed("reopen-ok");
+    const usersBefore = fs.readFileSync(path.join(data, "db", "users.json"), "utf8");
+    for (let n = 0; n < 3; n++) {
+      const r = initializeInstall(data, { expectExisting: true });
+      expect(r).toMatchObject({ created: false, setupComplete: true, ownerExists: true, setupCode: null });
+    }
+    expect(fs.readFileSync(path.join(data, "db", "users.json"), "utf8")).toBe(usersBefore);
+    expect(readServerConfig(data).debrid.validatedAt).toBe("2026-10-26T00:00:00.000Z");
+  });
+
+  it("refuses a remembered folder that is missing instead of starting over", () => {
+    const data = path.join(scratch, "reopen-missing");
+    expect(() => initializeInstall(data, { expectExisting: true })).toThrow(InstallUnavailableError);
+    expect(fs.existsSync(data)).toBe(false); // nothing created
+  });
+
+  it("refuses unreadable settings instead of reopening the first-run wizard", () => {
+    const data = completed("reopen-corrupt");
+    const file = path.join(data, "config", "server.json");
+    const before = fs.readFileSync(file, "utf8").slice(0, 40) + "{{ truncated";
+    fs.writeFileSync(file, before);
+    expect(() => initializeInstall(data)).toThrow(/settings file .* cannot be read/);
+    expect(fs.readFileSync(file, "utf8")).toBe(before); // not overwritten with defaults
+  });
+
+  it("refuses a completed installation whose account database is missing or unreadable", () => {
+    const data = completed("reopen-no-users");
+    const users = path.join(data, "db", "users.json");
+    fs.writeFileSync(users, "not json");
+    expect(() => initializeInstall(data)).toThrow(/account database .* cannot be read/);
+    fs.rmSync(users);
+    expect(() => initializeInstall(data)).toThrow(/setup was completed, but the account database .* is missing/);
+    expect(fs.existsSync(users)).toBe(false);
+  });
+
+  it("refuses accounts without settings", () => {
+    const data = completed("reopen-no-config");
+    fs.rmSync(path.join(data, "config", "server.json"));
+    expect(() => initializeInstall(data)).toThrow(/accounts exist, but the settings file .* is missing/);
+  });
+
+  it("still resumes an interrupted setup (owner created, setup not finished)", () => {
+    const data = path.join(scratch, "reopen-interrupted");
+    initializeInstall(data);
+    fs.writeFileSync(path.join(data, "db", "users.json"), JSON.stringify({ users: [{ id: "x", name: "owner", role: "owner" }] }));
+    expect(initializeInstall(data, { expectExisting: true })).toMatchObject({ setupComplete: false, ownerExists: true, setupCode: null });
   });
 });
 

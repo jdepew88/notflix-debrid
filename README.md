@@ -38,7 +38,8 @@ device can't play directly — using whatever graphics hardware you have, or non
 5. The wizard tests your graphics card automatically. Press **Finish setup** and start browsing.
 
 `Stop-Notflix.cmd` stops it; `Start-Notflix.cmd` starts it again (straight to the sign-in page
-once setup is done). No `.env` files to edit and no commands to type.
+once setup is done); `Restart-Notflix.cmd` and `Status-Notflix.cmd` do what they say. No `.env`
+files to edit and no commands to type.
 
 **With Git instead of the ZIP:** `git clone https://github.com/jdepew88/notflix-debrid.git`, then the
 same double-clicks. Git is optional and only makes updating easier.
@@ -65,6 +66,7 @@ the wizard step by step: [docs/ONBOARDING.md](docs/ONBOARDING.md).
 | [INSTALL-WINDOWS.md](docs/INSTALL-WINDOWS.md) | Installing, starting, stopping, updating, troubleshooting |
 | [ONBOARDING.md](docs/ONBOARDING.md) | Every setup step explained |
 | [CONFIGURATION.md](docs/CONFIGURATION.md) | Data folder layout, settings files, ports, cache, environment overrides |
+| [LAN-DISCOVERY.md](docs/LAN-DISCOVERY.md) | How TVs find the server automatically (mDNS/DNS-SD); firewall and router requirements |
 | [HARDWARE-ACCELERATION.md](docs/HARDWARE-ACCELERATION.md) | GPU support, how it is tested, fallbacks |
 | [SECURITY.md](docs/SECURITY.md) | Credentials, accounts, network exposure, threat model |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Web app, API, media engine and their contracts; tests |
@@ -81,6 +83,7 @@ services/media-engine      .NET 10 media engine (probing, decisions, FFmpeg, HLS
 Setup-Notflix.cmd          install prerequisites (WinGet) and build: setup.ps1 + requirements.winget
 Start-Notflix.cmd          start web server + engine, open the browser (wizard until setup is done)
 Stop-Notflix.cmd           stop this installation's web server and engine
+Restart-Notflix.cmd        stop + start;  Status-Notflix.cmd: processes, address, data folder
 scripts/notflix.ps1        launcher behind the .cmd files (setup/start/stop/status/logs/test)
 scripts/notflix-cli.mjs    offline maintenance (paths, port, move data, account recovery)
 ```

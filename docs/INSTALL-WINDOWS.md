@@ -9,6 +9,8 @@ separately: three double-click files do everything.
 | `Setup-Notflix.cmd` | Checks for Node.js, the .NET 10 SDK and FFmpeg, offers to install what's missing, then builds Notflix. Run it once, and again after updating. |
 | `Start-Notflix.cmd` | Starts Notflix and opens it in your browser: the setup wizard the first time, the normal sign-in page afterwards. |
 | `Stop-Notflix.cmd` | Stops this Notflix installation (and only it). |
+| `Restart-Notflix.cmd` | Stop + start. |
+| `Status-Notflix.cmd` | Shows whether it runs: processes, address, data folder. Changes nothing. |
 
 **Notflix provides no media** — no movies, shows or libraries. You bring two accounts of your own:
 a free [TMDB](https://www.themoviedb.org/) account (for the catalog) and a paid
@@ -89,14 +91,20 @@ It asks this installation's web server and media engine to shut down (active vid
 ended and their temporary files removed), and only forces them after a timeout. It never touches other
 Node.js, .NET or FFmpeg programs.
 
+Notflix keeps running after you close the window that started it. Stop, restart and status find its
+processes from their command line (this folder's `server.mjs` / media engine and the data folder
+they use), not only from the PID files in `run\`, so they work from any window later. A PID file
+that names some other program is ignored and removed, never acted on.
+
 ## Everyday use
 
 | Task | How |
 |---|---|
 | Start | `Start-Notflix.cmd` |
 | Stop | `Stop-Notflix.cmd` |
+| Restart | `Restart-Notflix.cmd` |
 | Change settings, keys or the graphics card | in Notflix: **Settings** (owner) → **Run the setup wizard again** |
-| Status, addresses, health | `powershell -ExecutionPolicy Bypass -File scripts\notflix.ps1 status` |
+| Status, addresses, health | `Status-Notflix.cmd` |
 | Recent log lines | `... scripts\notflix.ps1 logs` |
 
 Logs are in `%ProgramData%\NotflixDebrid\logs` (`web.log`, `media-engine.log` and their `.err.log`).
@@ -109,7 +117,11 @@ Options for `Start-Notflix.cmd` (from a command prompt in the Notflix folder):
 | `-Port 8430` | use another web port (saved for next time) |
 | `-EnginePort 8431` | use another port for the media engine (saved; always `127.0.0.1` only) |
 | `-NoBrowser` | don't open the browser |
-| `-DataDir D:\NotflixData` | use another data folder for this run (to move it permanently: `scripts\notflix.ps1 move-data -To <folder>`) |
+| `-DataDir D:\NotflixData` | use this data folder; it is remembered, so later starts, stops and restarts use it without `-DataDir` (to copy your data to a new folder: `scripts\notflix.ps1 move-data -To <folder>`) |
+
+`Stop-Notflix.cmd`, `Restart-Notflix.cmd` and `Status-Notflix.cmd` also accept `-DataDir <folder>`
+(for that run only). `Stop-Notflix.cmd -All` also stops servers started from this folder with
+other data folders, or by an older launcher.
 
 ### Using Notflix from other devices
 
@@ -118,6 +130,11 @@ same network, the owner enables **Settings → Server & storage → Allow other 
 network**. Notflix then shows the address to use (e.g. `http://192.168.1.20:8420`). Windows may ask
 whether Node.js may communicate on **private** networks — allow private, not public. Notflix never
 opens ports on your router. The media engine always stays private to this computer.
+
+While LAN access is on, Notflix also **announces itself on the network** (mDNS/DNS-SD), so the
+Notflix TV app lists it automatically, with the right port, under the name set in **Name shown on
+TVs** (default: this computer's name). Turn it off with **Let TVs find this server automatically**.
+Details, firewall and router requirements: [LAN-DISCOVERY.md](LAN-DISCOVERY.md).
 
 ### Starting automatically
 
@@ -131,8 +148,10 @@ To start Notflix when you sign in, put a shortcut to `Start-Notflix.cmd` in `she
 3. `Setup-Notflix.cmd`
 4. `Start-Notflix.cmd`
 
-Accounts, settings and credentials live in the data folder (`%ProgramData%\NotflixDebrid`), not in
-the program folder, so updates keep them.
+Accounts, settings and credentials live in the data folder (`%ProgramData%\NotflixDebrid`, or the
+folder you chose with `-DataDir`), not in the program folder, so updates keep them. The program
+folder only remembers which data folder it uses (`.notflix-data-dir`); keep that file when you
+extract an update over the old folder.
 
 ## Uninstalling
 
@@ -153,6 +172,9 @@ the program folder, so updates keep them.
 | **.NET SDK missing** (only a runtime is installed) | Setup installs `Microsoft.DotNet.SDK.10`; the SDK, not only the runtime, is needed to build the media engine. |
 | **Node.js too old** | Setup offers Node.js LTS. If your Node.js comes from **nvm** (or fnm/Volta), setup asks you to update it there instead (`nvm install lts`, then `nvm use lts`) so two copies don't conflict. |
 | **"Port 8420, which Notflix uses, is taken by …"** | Another program (or a second Notflix) uses the port. Close it, or from a command prompt in the Notflix folder run `Start-Notflix.cmd -Port 8430`. For the engine: `-EnginePort 8431`. |
+| **After a restart the browser shows the setup wizard again** | Notflix opened a different (empty) data folder than the one you set up. Run `Status-Notflix.cmd`: it shows the data folder in use and any other Notflix servers running from this folder. Stop them (`Stop-Notflix.cmd -All`), then start once with your folder: `Start-Notflix.cmd -DataDir "<your data folder>"`. It is remembered from then on. |
+| **`Stop-Notflix.cmd` says "Notflix was not running" but Notflix still answers** | The server belongs to another data folder or was started by an older launcher; the stop window lists it (*Also running from this folder…*). Use the command it shows, or `Stop-Notflix.cmd -All`. |
+| **"Notflix cannot open its data folder …"** | The remembered data folder is missing or damaged. Nothing was changed. Connect the drive or restore the folder and start again; or start with `-DataDir "<folder>"` to use another one. |
 | **"Notflix is not installed yet"** | Run `Setup-Notflix.cmd` first (also after moving or updating the folder). |
 | **"Notflix is running. Stop it first"** during setup | Run `Stop-Notflix.cmd`, then setup again. |
 | **"Notflix is already starting in another window"** | Wait for the other window to finish. If none is open, wait three minutes or delete `run\launcher.lock` in the data folder. |
@@ -163,3 +185,4 @@ the program folder, so updates keep them.
 | **Engine exits right away** | `scripts\notflix.ps1 logs`; look at `media-engine.err.log`. |
 | **Forgot the owner password** | `Stop-Notflix.cmd`, then `powershell -ExecutionPolicy Bypass -File scripts\notflix.ps1 accounts reset-password <owner name>` prints a temporary password. |
 | **Locked yourself out of LAN access** | On the server computer: `node scripts\notflix-cli.mjs allow-lan on`. |
+| **The TV app doesn't find the server** | `scripts\notflix.ps1 status` must show `LAN discovery  announced as …` and `answers test queries`. If it does, the network is blocking multicast between TV and PC (guest Wi-Fi, client isolation, VLANs, VPN), or Windows Firewall blocks Node.js on UDP 5353, or the network is set to *Public*. Enter the address on the TV instead (e.g. `192.168.1.20`; the app tries port 8420, then 4119). See [LAN-DISCOVERY.md](LAN-DISCOVERY.md). |

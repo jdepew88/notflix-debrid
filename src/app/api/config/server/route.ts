@@ -5,7 +5,8 @@ import { requireConfigAccess } from "@/lib/config-access";
 import { dataDir, serverConfig, updateConfig } from "@/lib/install/runtime";
 import { MAX_CACHE_GIB, MIN_CACHE_GIB, bindAddressFor, readEngineConfig, updateEngineConfig, validHostname, validPort, validPublicUrl } from "@/lib/install/config.mjs";
 import { cacheDirProblem } from "@/lib/install/paths.mjs";
-import { lanAddresses, listenStatus } from "@/lib/install/status";
+import { advertiseStatus, lanAddresses, listenStatus } from "@/lib/install/status";
+import { MAX_SERVER_NAME, cleanServerName, serverName } from "@/lib/install/identity.mjs";
 import { pushEngineRuntimeConfig } from "@/lib/media-engine/client";
 
 export const dynamic = "force-dynamic";
@@ -14,10 +15,11 @@ function view() {
   const cfg = serverConfig();
   const engine = readEngineConfig(dataDir());
   return {
-    server: { ...cfg.server, effectiveBindAddress: bindAddressFor(cfg) },
+    server: { ...cfg.server, effectiveBindAddress: bindAddressFor(cfg), effectiveName: serverName(cfg) },
     storage: { ...cfg.storage, dataDir: dataDir() },
     engine: { port: engine.port },
     listening: listenStatus(),
+    advertisement: advertiseStatus(),
     lanAddresses: lanAddresses(),
     stepsDone: cfg.setup.stepsDone,
   };
@@ -60,8 +62,14 @@ export async function PUT(request: NextRequest) {
   const publicUrl = body.publicUrl === undefined ? current.server.publicUrl : String(body.publicUrl ?? "").trim();
   if (publicUrl && !validPublicUrl(publicUrl)) errors.publicUrl = "Enter a full address such as https://notflix.example.com (no path or query).";
 
+  const name = body.name === undefined ? current.server.name : String(body.name ?? "").trim();
+  if (name && (cleanServerName(name) !== name || name.length > MAX_SERVER_NAME)) {
+    errors.name = `Use up to ${MAX_SERVER_NAME} letters, digits, spaces or symbols, without dots.`;
+  }
+
   const bool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
   const allowLan = bool(body.allowLan, current.server.allowLan);
+  const advertise = bool(body.advertise, current.server.advertise);
   const reverseProxy = bool(body.reverseProxy, current.server.reverseProxy);
 
   const cacheDirectory = body.cacheDirectory === undefined ? current.storage.cacheDirectory : String(body.cacheDirectory ?? "").trim();
@@ -82,6 +90,8 @@ export async function PUT(request: NextRequest) {
     cfg.server.publicUrl = publicUrl;
     cfg.server.allowLan = allowLan;
     cfg.server.reverseProxy = reverseProxy;
+    cfg.server.name = name;
+    cfg.server.advertise = advertise;
     cfg.storage.cacheDirectory = path.resolve(cacheDirectory);
     cfg.storage.cacheMaxGiB = Math.round(cacheMaxGiB);
     if (!cfg.setup.stepsDone.includes("server")) cfg.setup.stepsDone.push("server");

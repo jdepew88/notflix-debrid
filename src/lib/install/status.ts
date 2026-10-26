@@ -67,6 +67,35 @@ export function listenStatus(): ListenStatus | null {
   return s && typeof s.port === "number" ? s : null;
 }
 
+/** LAN advertisement (mDNS/DNS-SD) as reported by server.mjs; see lan-advertise.mjs. */
+export interface AdvertiseStatus {
+  active: boolean;
+  serviceType: string;
+  name: string | null;
+  port: number | null;
+  host: string | null;
+  addresses: string[];
+  reason: string | null;
+  error: string | null;
+  since: string;
+  pid: number;
+}
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** null when the web server isn't running here (or left a stale file behind after a crash). */
+export function advertiseStatus(): AdvertiseStatus | null {
+  const s = readJson(paths().advertiseStatusFile, null as AdvertiseStatus | null);
+  return s && typeof s.pid === "number" && alive(s.pid) ? s : null;
+}
+
 /** Addresses other devices could use (non-internal IPv4), for display only. */
 export function lanAddresses(): string[] {
   const out: string[] = [];

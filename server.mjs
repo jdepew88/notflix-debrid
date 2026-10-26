@@ -3,25 +3,38 @@
 //  - by default it listens on 127.0.0.1 only; LAN access is an explicit owner setting;
 //  - route handlers get a trustworthy client address (x-notflix-peer, from the TCP socket);
 //  - when the owner changes the port or LAN access, it moves to the new address by itself;
+//  - with LAN access on, it announces itself on the local network (mDNS/DNS-SD, _notflix._tcp) so
+//    TVs find it without an address; the announcement follows the port and ends when it stops;
 //  - it stops cleanly when the launcher asks (run/web.stop) or on Ctrl+C.
 //
-// Usage: node server.mjs [--dev]      (the launcher scripts/notflix.ps1 runs this)
+// Usage: node server.mjs [--dev] [--data-dir <folder>]      (the launcher scripts/notflix.ps1 runs this)
+// The launcher always passes --data-dir: it is also how it recognises which installation a running
+// server belongs to (the process command line), long after the window that started it has closed.
 import fs from "node:fs";
 import http from "node:http";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import next from "next";
-import { installPaths, resolveDataDir } from "./src/lib/install/paths.mjs";
+import { installPaths, recoveryMessage, resolveDataDir } from "./src/lib/install/paths.mjs";
 import { bindAddressFor, ensureEngineLibraryRoot, readServerConfig } from "./src/lib/install/config.mjs";
-import { initializeInstall } from "./src/lib/install/init.mjs";
+import { InstallUnavailableError, initializeInstall } from "./src/lib/install/init.mjs";
 import { writeJsonAtomic } from "./src/lib/install/store.mjs";
+import { instanceId, serverName } from "./src/lib/install/identity.mjs";
+import { advertisementPlan, createAdvertiser } from "./src/lib/install/lan-advertise.mjs";
 
 const appRoot = path.dirname(fileURLToPath(import.meta.url));
 const dev = process.argv.includes("--dev");
 process.env.NODE_ENV ??= dev ? "development" : "production";
 process.env.NEXT_TELEMETRY_DISABLED ??= "1";
 
-const { dataDir, source } = resolveDataDir({ appRoot });
+const dataDirArg = process.argv.indexOf("--data-dir");
+if (dataDirArg > 0 && process.argv[dataDirArg + 1]) process.env.NOTFLIX_DATA_DIR = process.argv[dataDirArg + 1];
+const { dataDir, source, problem } = resolveDataDir({ appRoot });
+if (problem) {
+  console.error(`[notflix] ${recoveryMessage(dataDir, problem)}`);
+  process.exit(2);
+}
 // Everything in this process (and the engine the launcher starts) agrees on one data directory.
 process.env.NOTFLIX_DATA_DIR = dataDir;
 const paths = installPaths(dataDir);
@@ -32,9 +45,14 @@ function log(...args) {
 
 let init;
 try {
-  init = initializeInstall(dataDir);
+  // A remembered folder must already hold an installation; never start over in it silently.
+  init = initializeInstall(dataDir, { expectExisting: source === "pointer" });
   ensureEngineLibraryRoot(dataDir, path.join(appRoot, "test-media"));
 } catch (err) {
+  if (err instanceof InstallUnavailableError) {
+    console.error(`[notflix] ${err.message}`);
+    process.exit(2);
+  }
   console.error(`[notflix] Cannot use the data directory ${dataDir}: ${err instanceof Error ? err.message : err}`);
   console.error("[notflix] Choose another one with NOTFLIX_DATA_DIR or scripts\\notflix.ps1 -DataDir <folder>.");
   process.exit(2);
@@ -80,6 +98,7 @@ function listen(host, port) {
 }
 
 let current = null; // { server, host, port }
+let stopping = false;
 
 function writeStatus(pending = null) {
   try {
@@ -133,6 +152,34 @@ async function applyListenConfig(initial = false) {
 
 await applyListenConfig(true);
 
+// LAN advertisement. Failures (no multicast, port 5353 unavailable) are logged and reported in
+// run/advertise-status.json; the website and playback never depend on it.
+const advertiseDisabledByEnv = /^(0|false|no|off)$/i.test(process.env.NOTFLIX_ADVERTISE ?? "");
+const advertiser = createAdvertiser({
+  log,
+  onStatus(status) {
+    try {
+      writeJsonAtomic(paths.advertiseStatusFile, { ...status, pid: process.pid });
+    } catch (err) {
+      log("could not write advertisement status:", err instanceof Error ? err.message : err);
+    }
+  },
+});
+
+function updateAdvertisement() {
+  if (stopping || !current) return;
+  try {
+    const cfg = readServerConfig(dataDir);
+    const plan = advertiseDisabledByEnv
+      ? { enabled: /** @type {const} */ (false), reason: "turned off with NOTFLIX_ADVERTISE" }
+      : advertisementPlan(cfg, current, { name: serverName(cfg), instanceId: instanceId(dataDir), hostname: os.hostname() });
+    void advertiser.apply(plan);
+  } catch (err) {
+    log("LAN advertisement not started:", err instanceof Error ? err.message : err);
+  }
+}
+updateAdvertisement();
+
 if (init.setupCode) {
   const url = `${describe(current.host, current.port)}/setup`;
   const line = "=".repeat(64);
@@ -140,14 +187,14 @@ if (init.setupCode) {
 }
 
 // Follow owner changes to the port / LAN access without a restart.
+// (also the name, LAN advertisement and setup state the advertisement depends on).
 fs.watchFile(paths.serverConfigFile, { interval: 1500 }, () => {
-  void applyListenConfig(false);
+  void applyListenConfig(false).then(updateAdvertisement);
 });
 
 // Graceful stop: Ctrl+C, service stop, or the launcher creating run/web.stop.
 const stopFile = path.join(paths.runDir, "web.stop");
 fs.rmSync(stopFile, { force: true });
-let stopping = false;
 function shutdown(reason) {
   if (stopping) return;
   stopping = true;
@@ -155,15 +202,22 @@ function shutdown(reason) {
   fs.unwatchFile(paths.serverConfigFile);
   fs.unwatchFile(stopFile);
   fs.rmSync(stopFile, { force: true });
-  try {
-    fs.rmSync(paths.listenStatusFile, { force: true });
-  } catch {
-    /* ignore */
-  }
   const done = () => process.exit(0);
-  if (current) current.server.close(done);
-  current?.server.closeAllConnections?.();
   setTimeout(done, 5_000).unref();
+  // Goodbye packets first, so TVs drop the server at once instead of when the records expire.
+  const goodbye = Promise.race([advertiser.stop(), new Promise((r) => setTimeout(r, 2_000).unref())]);
+  void goodbye.finally(() => {
+    for (const file of [paths.listenStatusFile, paths.advertiseStatusFile]) {
+      try {
+        fs.rmSync(file, { force: true });
+      } catch {
+        /* ignore */
+      }
+    }
+    if (current) current.server.close(done);
+    else done();
+    current?.server.closeAllConnections?.();
+  });
 }
 fs.watchFile(stopFile, { interval: 1000 }, (stat) => {
   if (stat.size >= 0 && fs.existsSync(stopFile)) shutdown("stop requested");

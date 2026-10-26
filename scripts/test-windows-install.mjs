@@ -110,7 +110,11 @@ const alive = (pid) => {
     return false;
   }
 };
-const readPid = (inst, name) => Number(fs.readFileSync(path.join(inst.data, "run", `${name}.pid`), "utf8").trim());
+/** PID from a launcher record (JSON since the process-tracking fix; a bare number before). */
+const readPid = (inst, name) => {
+  const raw = fs.readFileSync(path.join(inst.data, "run", `${name}.pid`), "utf8").trim();
+  return Number(raw.startsWith("{") ? JSON.parse(raw).pid : raw);
+};
 /**
  * fetch with one retry: after a restart this process's pooled keep-alive connection to the old
  * server is dead, and only the first request on it fails ("fetch failed").
@@ -395,7 +399,10 @@ try {
   check("wizard reopens for the owner without the owner-creation step", (await page.getByRole("button", { name: /Owner account/ }).count()) === 0);
   await page.getByRole("button", { name: /TMDB/ }).click();
   await page.getByRole("heading", { name: /TMDB/ }).waitFor();
-  check("current key is not shown, only its last characters", !(await page.locator("body").innerText()).includes(SIM_TMDB) && (await page.locator("text=Keep current key").count()) === 1);
+  // The step renders its heading before it has loaded the stored-key status; wait for that.
+  await page.locator("text=Keep current key").waitFor({ timeout: 15_000 }).catch(() => {});
+  const tmdbStep = await page.locator("body").innerText();
+  check("current key is not shown, only its last characters", !tmdbStep.includes(SIM_TMDB) && (await page.locator("text=Keep current key").count()) === 1, tmdbStep.includes(SIM_TMDB) ? "KEY VISIBLE" : tmdbStep.replace(/\s+/g, " ").slice(tmdbStep.indexOf("TMDB"), tmdbStep.indexOf("TMDB") + 400));
   await page.locator("#tmdb-key").fill(badKey);
   await page.getByRole("button", { name: "Save and continue" }).click();
   await page.locator("text=/TMDB rejected|didn.t accept|not accepted|invalid/i").first().waitFor({ timeout: 30_000 });
