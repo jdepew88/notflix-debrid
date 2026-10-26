@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { createAccount, signInThroughUi, uniqueName } from "./helpers";
 
@@ -152,7 +154,13 @@ test("Change video source: lists releases with verified facts, switches at the s
   const name = uniqueName("e2e-source");
   await createAccount(request, name, "e2e-pass-6");
   await signInThroughUi(page, name, "e2e-pass-6");
-  const engineSessions = async () => (await (await page.request.get("/api/settings/engine")).json()).capabilities.load.sessions as number;
+  // Engine status is owner-only in the app, so ask the test instance's engine directly.
+  test.skip(!process.env.E2E_DATA_PATH, "E2E_DATA_PATH (the test server's data folder) is needed to read engine load");
+  const data = process.env.E2E_DATA_PATH!;
+  const enginePort = JSON.parse(fs.readFileSync(path.join(data, "config", "engine.json"), "utf8")).port as number;
+  const engineKey = fs.readFileSync(path.join(data, "secrets", "engine-secret"), "utf8").trim();
+  const engineSessions = async () =>
+    (await (await page.request.get(`http://127.0.0.1:${enginePort}/capabilities`, { headers: { "X-Engine-Key": engineKey } })).json()).load.sessions as number;
   const baseline = await engineSessions(); // sessions of other viewers / earlier tests
   await openPlayer(page, "hevc_ac3_long.mkv");
   await page.waitForTimeout(4000);
