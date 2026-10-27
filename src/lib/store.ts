@@ -15,6 +15,7 @@ import {
   type ProfilePreferences,
   type TitlePreferences,
 } from "./profile-preferences";
+import { DEFAULT_NOTIFICATION_PREFERENCES, type NotificationPreferences } from "./notifications/preferences";
 
 interface AuthUser {
   id: string;
@@ -163,7 +164,8 @@ export const useAppStore = create<AppState>()(
           queueByProfile: payload.queueByProfile ?? {},
           continueWatchingByProfile: payload.continueWatchingByProfile,
           lastWatchedByProfile: payload.lastWatchedByProfile ?? {},
-          preferencesByProfile: payload.preferencesByProfile ?? {},
+          // Profiles saved by older versions lack newer fields (e.g. notifications): fill in defaults.
+          preferencesByProfile: Object.fromEntries(Object.entries(payload.preferencesByProfile ?? {}).map(([id, p]) => [id, normalizeProfilePreferences(p)])),
         });
         flushPendingProgress(get());
       },
@@ -353,6 +355,16 @@ export function useActivePreferences(): ProfilePreferences {
     const pk = s.activeProfileId;
     return pk ? s.preferencesByProfile[pk] : undefined;
   }) ?? DEFAULT_PROFILE_PREFERENCES;
+}
+
+/** Notification preferences of the active profile (defaults when none saved). */
+export function useNotificationPreferences(): NotificationPreferences {
+  return (
+    useAppStore((s) => {
+      const pk = s.activeProfileId;
+      return pk ? s.preferencesByProfile[pk]?.notifications : undefined;
+    }) ?? DEFAULT_NOTIFICATION_PREFERENCES
+  );
 }
 
 export function getActiveMyList(): string[] {

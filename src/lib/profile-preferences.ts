@@ -3,6 +3,11 @@
  * the user's state file on the server under preferencesByProfile and mirrored in the client store.
  * Shared by server validation and client UI; no secrets or media links ever live here.
  */
+import {
+  DEFAULT_NOTIFICATION_PREFERENCES,
+  normalizeNotificationPreferences,
+  type NotificationPreferences,
+} from "./notifications/preferences";
 
 export type SubtitleSize = "small" | "medium" | "large" | "xlarge";
 export type SubtitleColor = "white" | "yellow" | "cyan";
@@ -45,6 +50,8 @@ export interface ProfilePreferences {
   autoplayPreviews: boolean;
   autoplayNextEpisode: boolean;
   titlePrefs: Record<string, TitlePreferences>;
+  /** What this profile is notified about (lib/notifications/preferences.ts). */
+  notifications: NotificationPreferences;
 }
 
 export const DEFAULT_PROFILE_PREFERENCES: ProfilePreferences = {
@@ -61,6 +68,7 @@ export const DEFAULT_PROFILE_PREFERENCES: ProfilePreferences = {
   autoplayPreviews: false,
   autoplayNextEpisode: true,
   titlePrefs: {},
+  notifications: DEFAULT_NOTIFICATION_PREFERENCES,
 };
 
 export const LANGUAGE_OPTIONS: Array<[code: string, label: string]> = [
@@ -118,6 +126,8 @@ export function normalizeProfilePreferences(
     autoplayPreviews: bool(p.autoplayPreviews, base.autoplayPreviews),
     autoplayNextEpisode: bool(p.autoplayNextEpisode, base.autoplayNextEpisode),
     titlePrefs,
+    // Profiles saved before notifications existed get the defaults; a partial patch merges.
+    notifications: normalizeNotificationPreferences(p.notifications, base.notifications ?? DEFAULT_NOTIFICATION_PREFERENCES),
   };
 }
 

@@ -15,6 +15,7 @@ import { isSeriesItem, watchHrefForEpisode, watchIdForItem } from "@/lib/watch-u
 import { episodeProgressKey } from "@/lib/watch-progress";
 import type { MediaItem } from "@/lib/types";
 import { cn } from "@/lib/cn";
+import { FollowSeriesButton } from "@/components/notifications/FollowSeriesButton";
 
 /**
  * Title details: opened by clicking a poster anywhere (rows, genre grid, search, My List). Playback
@@ -209,6 +210,7 @@ function TitleDetailsDialog({ item }: { item: MediaItem }) {
               >
                 {inList ? <Check className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
               </button>
+              {isSeries && tmdbId && <FollowSeriesButton tmdbId={tmdbId} title={display.title} inList={inList} />}
               {trailerKey && (
                 <button
                   type="button"
@@ -331,6 +333,7 @@ function TitleDetailsDialog({ item }: { item: MediaItem }) {
               seasons={data.seasons}
               seriesWatchId={watchIdForItem(display)}
               title={display.title}
+              preferSeason={item.season}
               onPlay={(season, episode) =>
                 play(watchHrefForEpisode({ watchId: watchIdForItem(display), tmdbId, title: display.title, season, episode }))
               }
@@ -440,17 +443,25 @@ function Episodes({
   seasons,
   seriesWatchId,
   title,
+  preferSeason,
   onPlay,
 }: {
   tmdbId: number;
   seasons: TitleDetails["seasons"];
   seriesWatchId: string;
   title: string;
+  /** Season to show first (a notification about that season); else the last watched one. */
+  preferSeason?: number;
   onPlay: (season: number, episode: number) => void;
 }) {
   const last = useAppStore((s) => (s.activeProfileId ? s.lastWatchedByProfile[s.activeProfileId]?.[seriesWatchId] : undefined));
   const progress = useAppStore((s) => (s.activeProfileId ? s.continueWatchingByProfile[s.activeProfileId] : undefined));
-  const initial = last?.season && seasons.some((s) => s.season === last.season) ? last.season : seasons[0].season;
+  const initial =
+    preferSeason && seasons.some((s) => s.season === preferSeason)
+      ? preferSeason
+      : last?.season && seasons.some((s) => s.season === last.season)
+        ? last.season
+        : seasons[0].season;
   const [season, setSeason] = useState(initial);
   const [episodes, setEpisodes] = useState<SeasonEpisode[] | null>(null);
   const [error, setError] = useState(false);

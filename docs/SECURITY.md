@@ -87,6 +87,26 @@ strong passwords, keep the media engine port private, and remember that anyone w
 stream through your Real-Debrid subscription. Only enable "behind a reverse proxy" when a proxy is
 actually in front — otherwise clients could forge their address in rate limiting.
 
+## Notifications
+
+- Notifications are stored per account and profile on the server; every API call checks the
+  session and the signed profile cookie, so one profile can neither list nor change another's.
+  Changes require a JSON body and a same-origin request (`Sec-Fetch-Site` / `Origin`), and are
+  rate-limited. Notification text is rendered as text, and links are same-origin paths only.
+- The background checks call TMDB from the server with the stored key; nothing about it reaches
+  browsers. Kids/teen profiles get only notifications for titles rated within their level; service
+  notices go only to owners and administrators.
+- Browser push (optional, off by default): the VAPID private key is generated on first use and kept
+  in the encrypted credential store; only the public key is sent to browsers. Each message is
+  encrypted for the subscribed browser (RFC 8291) and carries only the notification's title, text,
+  in-app link and poster address, never credentials, account data or stream links. A signed-in user
+  can register only HTTPS endpoints of known browser push services (Google, Mozilla, Apple,
+  Microsoft), so the server cannot be made to send requests to arbitrary hosts. Subscriptions belong
+  to one account and profile and are removed when the browser unsubscribes, the push service
+  reports them gone, or the profile is deleted.
+- The service worker (`/notflix-sw.js`) only shows notifications and opens Notflix pages; it has no
+  `fetch` handler, so it never intercepts or caches pages, API responses or video.
+
 ## Media engine
 
 - Bound to loopback; every request needs the engine key; each playback session additionally needs a

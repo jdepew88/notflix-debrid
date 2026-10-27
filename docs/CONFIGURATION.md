@@ -55,11 +55,12 @@ empty or new folder starts a new installation, and the launcher says so).
   config\engine.json      media engine: port, hardware choice/device, transcode limits, library roots
   config\playback.json    server-wide playback defaults (resolution, quality, languages, buffering)
   config\instance-id      random ID of this installation (public: /api/health and the LAN announcement)
-  secrets\secrets.json    session signing key, TMDB key, Real-Debrid token, custom addon URL
+  secrets\secrets.json    session signing key, TMDB key, Real-Debrid token, custom addon URL, Web Push (VAPID) keys
   secrets\engine-secret   shared key between the web server and the media engine
   db\users.json           accounts (scrypt password hashes, roles)
   db\users\<id>.json      profiles, My List, progress, watch history, preferences per account
   db\avatars\<id>\        uploaded profile pictures (re-encoded WebP)
+  db\notifications\       notifications per profile, background-check state, browser push subscriptions (NOTIFICATIONS.md)
   logs\                   web.log, media-engine.log (+ .err.log)
   run\                    PID files, listen-status.json, advertise-status.json, stop requests
   cache\engine\           HLS segments per playback session (default cache location)
@@ -141,6 +142,9 @@ None are needed for normal use; they exist for development, services and contain
 | `FFMPEG_PATH`, `FFPROBE_PATH` | FFmpeg binaries for the engine |
 | `COOKIE_SECURE` | `true`/`false` to force the cookie `Secure` flag (default: per request) |
 | `NOTFLIX_ADVERTISE` | `0`/`false` turns the LAN announcement off for this process regardless of the setting |
+| `NOTFLIX_NOTIFICATIONS` | `0`/`false` turns the notification background checks off ([NOTIFICATIONS.md](NOTIFICATIONS.md)) |
+| `NOTFLIX_NOTIFY_START_DELAY_MS` | delay before the first notification check after start (default 120000) |
+| `NOTFLIX_PUSH_CONTACT`, `NOTFLIX_PUSH_HOSTS` | contact sent to browser push services (`mailto:`/`https://`); extra allowed push service hosts |
 | `SIGNUP_RATE_LIMIT` | new accounts per address per hour (default 5) |
 
 ## Offline maintenance
