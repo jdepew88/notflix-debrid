@@ -72,7 +72,7 @@ function runCmd(app, file, cmdArgs = [], env = {}) {
   const r = spawnSync("cmd.exe", ["/d", "/s", "/c", line], {
     cwd: os.homedir(),
     windowsVerbatimArguments: true,
-    env: { ...process.env, NOTFLIX_NO_PAUSE: "1", NOTFLIX_DATA_DIR: "", ProgramData: fakeProgramData, NOTFLIX_BROWSER_LOG: browserLog, ...env },
+    env: { ...process.env, NOTFLIX_NO_PAUSE: "1", NOTFLIX_DATA_DIR: "", ProgramData: fakeProgramData, LOCALAPPDATA: path.join(parent, "localappdata"), NOTFLIX_BROWSER_LOG: browserLog, ...env },
     stdio: "ignore",
     timeout: 20 * 60_000,
   });
@@ -475,6 +475,74 @@ try {
   const st12c = start(appA);
   check("start again: announced on the configured port, setup still complete", st12c.code === 0 && (await waitAdv(A1, (s) => s?.active))?.port === A1.web && lastBrowserUrl() === `${base(A1)}/`);
   check("final stop withdraws it again", stop(appA).code === 0 && !advStatus(A1) && !(await browse({ timeoutMs: 2500 })).some((s) => s.txt?.id === idA));
+
+  section("13. One-click start: Desktop shortcut, window closes, no duplicates, recovery commands");
+  const fakeDesktop = path.join(parent, "desktop");
+  fs.mkdirSync(fakeDesktop, { recursive: true });
+  const lnk = path.join(fakeDesktop, "Start Notflix.lnk");
+  const desktopEnv = { NOTFLIX_DESKTOP_DIR: fakeDesktop };
+  const psq = (s) => "'" + s.replaceAll("'", "''") + "'";
+  const launcherEnv = () => ({ ...process.env, NOTFLIX_DATA_DIR: "", ProgramData: fakeProgramData, LOCALAPPDATA: path.join(parent, "localappdata"), NOTFLIX_BROWSER_LOG: browserLog });
+  const setupOffer = (answer) =>
+    spawnSync("powershell.exe", ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(appA, "setup.ps1")], {
+      input: answer + "\r\n",
+      encoding: "utf8",
+      env: { ...launcherEnv(), ...desktopEnv, NOTFLIX_SETUP_PROMPT: "1" },
+      timeout: 15 * 60_000,
+    });
+  const refused = setupOffer("n");
+  check("setup offers the shortcut; answering no creates nothing", refused.status === 0 && /Create a "Start Notflix" shortcut/.test(refused.stdout) && !fs.existsSync(lnk), refused.stderr?.slice(0, 200));
+  const accepted = setupOffer("y");
+  check("answering yes creates it", accepted.status === 0 && fs.existsSync(lnk), accepted.stderr?.slice(0, 200));
+  const readLink = () =>
+    JSON.parse(execFileSync("powershell.exe", ["-NoProfile", "-Command", "$l=(New-Object -ComObject WScript.Shell).CreateShortcut(" + psq(lnk) + "); @{t=$l.TargetPath;w=$l.WorkingDirectory;i=$l.IconLocation} | ConvertTo-Json"], { encoding: "utf8" }));
+  const link = readLink();
+  check("the shortcut starts this installation with its icon", link.t === path.join(appA, "Start-Notflix.cmd") && link.w === appA && fs.existsSync(link.i.split(",")[0]), JSON.stringify(link));
+
+  fs.rmSync(browserLog, { force: true });
+  const clickEnv = { ...launcherEnv() };
+  delete clickEnv.NOTFLIX_NO_PAUSE;
+  const click = () => {
+    const t0 = Date.now();
+    const r = spawnSync("cmd.exe", ["/d", "/c", "start", "/wait", "", lnk], { env: clickEnv, stdio: "ignore", timeout: 5 * 60_000 });
+    return { code: r.status, ms: Date.now() - t0 };
+  };
+  const first = click();
+  const afterFirst = services(appA);
+  check("double-click: the window closes by itself, both services keep running", first.code === 0 && afterFirst.length === 2, JSON.stringify({ first, afterFirst: afterFirst.length }));
+  check("double-click: the website answers after the window closed", (await new Client(base(A1)).json("GET", "/api/setup/status")).status === 200);
+  check("double-click: the browser is opened", fs.existsSync(browserLog) && fs.readFileSync(browserLog, "utf8").includes(String(A1.web)));
+  const second = click();
+  const afterSecond = services(appA);
+  check("second double-click: same processes, website opened again", second.code === 0 && afterSecond.map((p) => p.pid).sort().join() === afterFirst.map((p) => p.pid).sort().join() && fs.readFileSync(browserLog, "utf8").trim().split(/\r?\n/).length === 2, JSON.stringify({ second }));
+  await assertOnboarded("after double-clicks");
+
+  check("stop for recovery checks", stop(appA).code === 0);
+  const fakeLocal = path.join(parent, "localappdata");
+  const notAFolder = path.join(parent, "browser-opened.txt");
+  const failedStart = runCmd(appA, "Start-Notflix.cmd", ["-DataDir", notAFolder], { LOCALAPPDATA: fakeLocal });
+  const errorLog = path.join(fakeLocal, "NotflixDebrid", "launcher.log");
+  check("a failed start stays visible (nonzero exit, message) and is logged", failedStart.code !== 0 && /Notflix did not start/.test(failedStart.out) && fs.existsSync(errorLog) && /\[start\]/.test(fs.readFileSync(errorLog, "utf8")), failedStart.out.slice(-200));
+
+  const noOwner = path.join(A1.data, "db", "users.json");
+  const usersBefore = fs.readFileSync(noOwner, "utf8");
+  const claim = (name) => spawnSync(process.execPath, [path.join(appA, "scripts", "notflix-cli.mjs"), "accounts", "claim-owner", name, "--data-dir", A1.data], { encoding: "utf8", env: launcherEnv() });
+  check("claim-owner refuses while an owner exists and changes nothing", claim("member").status !== 0 && fs.readFileSync(noOwner, "utf8") === usersBefore);
+  const orphaned = JSON.parse(usersBefore);
+  const ownerUser = orphaned.users.find((u) => u.role === "owner");
+  ownerUser.role = "admin";
+  fs.writeFileSync(noOwner, JSON.stringify(orphaned, null, 2));
+  check("claim-owner rejects an unknown account", claim("nobody-here").status !== 0);
+  const claimed = claim(ownerUser.name);
+  const afterClaim = JSON.parse(fs.readFileSync(noOwner, "utf8"));
+  check("claim-owner restores an owner when none exists", claimed.status === 0 && afterClaim.users.find((u) => u.name === ownerUser.name).role === "owner" && afterClaim.users.filter((u) => u.role === "owner").length === 1, claimed.stderr?.slice(0, 200));
+
+  const refresh = spawnSync("powershell.exe", ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(appA, "scripts", "notflix.ps1"), "refresh", "-NoBrowser"], { env: launcherEnv(), stdio: "ignore", timeout: 15 * 60_000 });
+  check("refresh rebuilds and restarts", refresh.status === 0 && services(appA).length === 2);
+  await assertOnboarded("after refresh");
+  const noGit = spawnSync("powershell.exe", ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(appA, "scripts", "notflix.ps1"), "redeploy"], { env: launcherEnv(), encoding: "utf8" });
+  check("redeploy without Git explains itself and leaves Notflix running", noGit.status !== 0 && /not a Git clone/.test(noGit.stdout + noGit.stderr) && services(appA).length === 2);
+  check("stop after recovery checks", stop(appA).code === 0);
 } catch (err) {
   check("test ran to completion", false, err instanceof Error ? err.stack : String(err));
 } finally {

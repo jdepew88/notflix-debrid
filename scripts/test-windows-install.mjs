@@ -69,7 +69,7 @@ function runCmd(file, cmdArgs = [], env = {}, timeoutMs = 20 * 60_000) {
   const r = spawnSync("cmd.exe", ["/d", "/s", "/c", line], {
     cwd: os.homedir(), // any folder: the launchers must find their own
     windowsVerbatimArguments: true,
-    env: { ...process.env, NOTFLIX_NO_PAUSE: "1", NOTFLIX_DATA_DIR: "", ...env },
+    env: { ...process.env, LOCALAPPDATA: path.join(parent, "localappdata"), NOTFLIX_NO_PAUSE: "1", NOTFLIX_DATA_DIR: "", ...env },
     stdio: "ignore",
     timeout: timeoutMs,
   });
@@ -228,8 +228,9 @@ try {
   check("SIMULATED missing WinGet: clear manual instructions, nonzero exit, window would stay open", noWinget.code !== 0 && /WinGet .* not available/.test(noWinget.out) && /dotnet\.microsoft\.com/.test(noWinget.out) && /Setup did not finish/.test(noWinget.out));
 
   section("2. Start-Notflix.cmd: port conflicts are explained, nothing is left running");
+  const defaultEngineBusy = (await http("http://127.0.0.1:8421/health")).status === 200;
   const busyDefault = runCmd("Start-Notflix.cmd", ["-DataDir", dataA], { NOTFLIX_BROWSER_LOG: browserLog });
-  if ((await http("http://127.0.0.1:8421/health")).status === 200) {
+  if (defaultEngineBusy) {
     check("engine port already in use → clear message, nonzero exit", busyDefault.code !== 0 && /Port 8421, which the media engine uses, is taken by/.test(busyDefault.out) && /Notflix did not start/.test(busyDefault.out), busyDefault.out.match(/Port 8421[^\n]*/)?.[0]);
   } else {
     console.log("  (8421 free on this machine; engine-port conflict case not exercised here)");
@@ -392,8 +393,15 @@ try {
   check("setup complete and persisted", statusDone.setupComplete === true);
 
   section("8. Owner-only reconfiguration (Settings → Run the setup wizard again)");
+  // Settings needs a chosen profile; without one the app correctly shows "Who's watching?".
+  await page.locator("[data-testid=profile-tile]").first().click();
+  await page.waitForURL((u) => !u.pathname.startsWith("/profiles"), { timeout: 30_000 });
   await page.goto(`${baseB}/settings`);
-  await page.getByTestId("rerun-wizard").click();
+  await page.getByTestId("rerun-wizard").click().catch(async (err) => {
+    await page.screenshot({ path: path.join(evidence, "rerun-wizard-missing.png"), fullPage: true });
+    console.log("  page at failure:", page.url());
+    throw err;
+  });
   await page.waitForURL(/\/settings\/wizard/);
   await page.getByRole("heading", { name: "Server" }).waitFor({ timeout: 30_000 });
   check("wizard reopens for the owner without the owner-creation step", (await page.getByRole("button", { name: /Owner account/ }).count()) === 0);

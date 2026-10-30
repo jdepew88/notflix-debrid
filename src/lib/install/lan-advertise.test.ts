@@ -88,7 +88,7 @@ const nets = (...list: Array<[string, string, string?]>): NodeJS.Dict<os.Network
     ]),
   );
 
-const LAN = nets(["Ethernet", "10.10.0.11"], ["VMware Network Adapter VMnet8", "192.168.86.1"], ["Loopback", "127.0.0.1"]);
+const LAN = nets(["Ethernet", "10.20.0.11"], ["VMware Network Adapter VMnet8", "192.168.86.1"], ["Loopback", "127.0.0.1"]);
 
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 
@@ -100,7 +100,7 @@ function readyConfig(patch: { allowLan?: boolean; advertise?: boolean; completed
   return cfg;
 }
 
-const identity = { name: "Living Room", instanceId: "11111111-2222-4333-8444-555555555555", hostname: "JOEY-DESKTOP" };
+const identity = { name: "Living Room", instanceId: "11111111-2222-4333-8444-555555555555", hostname: "MEDIA-PC" };
 const plan = (port = 8420, cfg = readyConfig()) => advertisementPlan(cfg, { host: "0.0.0.0", port }, identity);
 
 /** Asks like a TV on [address] would and returns the decoded answers it received. */
@@ -145,7 +145,7 @@ describe("what is advertised", () => {
 
   it("the port the web server listens on, the friendly name and only non-sensitive TXT keys", () => {
     const p = plan(8430);
-    expect(p).toMatchObject({ enabled: true, name: "Living Room", port: 8430, host: "notflix-joey-desktop" });
+    expect(p).toMatchObject({ enabled: true, name: "Living Room", port: 8430, host: "notflix-media-pc" });
     if (!p.enabled) throw new Error("expected a plan");
     expect(p.txt).toEqual({ app: "notflix", api: "1", scheme: "http", id: identity.instanceId });
   });
@@ -155,19 +155,19 @@ describe("what is advertised", () => {
     expect(cleanServerName("a".repeat(80))).toHaveLength(60);
     expect(Buffer.byteLength(cleanServerName("é".repeat(60)), "utf8")).toBeLessThanOrEqual(63);
     const cfg = readyConfig();
-    expect(serverName(cfg, "JOEY-DESKTOP")).toBe("JOEY-DESKTOP");
+    expect(serverName(cfg, "MEDIA-PC")).toBe("MEDIA-PC");
     cfg.server.name = "Den";
-    expect(serverName(cfg, "JOEY-DESKTOP")).toBe("Den");
-    expect(hostLabel("Joey's PC.lan")).toBe("notflix-joey-s-pc-lan");
+    expect(serverName(cfg, "MEDIA-PC")).toBe("Den");
+    expect(hostLabel("Alex's PC.lan")).toBe("notflix-alex-s-pc-lan");
   });
 
   it("LAN interfaces skip loopback and link-local; a bound address limits them to one", () => {
-    const n = nets(["Ethernet", "10.10.0.11"], ["Wi-Fi", "169.254.3.4"], ["Loopback", "127.0.0.1"], ["VMnet8", "192.168.86.1"]);
-    expect(lanInterfaces("0.0.0.0", n).map((i) => i.address)).toEqual(["10.10.0.11", "192.168.86.1"]);
-    expect(lanInterfaces("10.10.0.11", n).map((i) => i.address)).toEqual(["10.10.0.11"]);
-    expect(sameSubnet("10.10.0.50", "10.10.0.11", "255.255.255.0")).toBe(true);
-    expect(sameSubnet("10.10.1.50", "10.10.0.11", "255.255.255.0")).toBe(false);
-    expect(sameSubnet("10.10.1.50", "10.10.0.11", "255.255.0.0")).toBe(true);
+    const n = nets(["Ethernet", "10.20.0.11"], ["Wi-Fi", "169.254.3.4"], ["Loopback", "127.0.0.1"], ["VMnet8", "192.168.86.1"]);
+    expect(lanInterfaces("0.0.0.0", n).map((i) => i.address)).toEqual(["10.20.0.11", "192.168.86.1"]);
+    expect(lanInterfaces("10.20.0.11", n).map((i) => i.address)).toEqual(["10.20.0.11"]);
+    expect(sameSubnet("10.20.0.50", "10.20.0.11", "255.255.255.0")).toBe(true);
+    expect(sameSubnet("10.20.1.50", "10.20.0.11", "255.255.255.0")).toBe(false);
+    expect(sameSubnet("10.20.1.50", "10.20.0.11", "255.255.0.0")).toBe(true);
   });
 });
 
@@ -176,14 +176,14 @@ describe("responder", () => {
     const bus = new Bus();
     const a = advertiser(bus);
     await started(a, plan(8420));
-    expect(a.status()).toMatchObject({ active: true, name: "Living Room", port: 8420, addresses: ["10.10.0.11", "192.168.86.1"] });
+    expect(a.status()).toMatchObject({ active: true, name: "Living Room", port: 8420, addresses: ["10.20.0.11", "192.168.86.1"] });
 
-    const answers = await ask(bus, "10.10.0.50", [{ name: SERVICE_TYPE, type: "PTR" }]);
-    expect(answers).toHaveLength(1); // only the Ethernet responder answers a 10.10.0.x question
+    const answers = await ask(bus, "10.20.0.50", [{ name: SERVICE_TYPE, type: "PTR" }]);
+    expect(answers).toHaveLength(1); // only the Ethernet responder answers a 10.20.0.x question
     const records = all(answers[0]);
     expect(records.find((r) => r.type === "PTR")?.data).toBe(`Living Room.${SERVICE_TYPE}`);
-    expect(records.find((r) => r.type === "SRV")?.data).toMatchObject({ port: 8420, target: "notflix-joey-desktop.local" });
-    expect(records.filter((r) => r.type === "A").map((r) => r.data)).toEqual(["10.10.0.11"]);
+    expect(records.find((r) => r.type === "SRV")?.data).toMatchObject({ port: 8420, target: "notflix-media-pc.local" });
+    expect(records.filter((r) => r.type === "A").map((r) => r.data)).toEqual(["10.20.0.11"]);
     const txt = (records.find((r) => r.type === "TXT")?.data as Buffer[]).map((b) => b.toString());
     expect(txt.sort()).toEqual(["api=1", "app=notflix", `id=${identity.instanceId}`, "scheme=http"]);
     // Nothing that looks like a credential, account, path or the engine port.
@@ -197,20 +197,20 @@ describe("responder", () => {
     const bus = new Bus();
     const a = advertiser(bus);
     await started(a, plan(8420));
-    const srv = await ask(bus, "10.10.0.50", [{ name: `Living Room.${SERVICE_TYPE}`, type: "SRV" }]);
+    const srv = await ask(bus, "10.20.0.50", [{ name: `Living Room.${SERVICE_TYPE}`, type: "SRV" }]);
     expect(srv[0].answers?.map((r) => r.type)).toEqual(["SRV"]);
     expect(srv[0].additionals?.map((r) => r.type)).toEqual(["A"]);
-    const host = await ask(bus, "10.10.0.50", [{ name: "notflix-joey-desktop.local", type: "A" }]);
-    expect(host[0].answers?.[0]).toMatchObject({ type: "A", data: "10.10.0.11" });
-    expect(await ask(bus, "10.10.0.50", [{ name: "_http._tcp.local", type: "PTR" }])).toHaveLength(0);
+    const host = await ask(bus, "10.20.0.50", [{ name: "notflix-media-pc.local", type: "A" }]);
+    expect(host[0].answers?.[0]).toMatchObject({ type: "A", data: "10.20.0.11" });
+    expect(await ask(bus, "10.20.0.50", [{ name: "_http._tcp.local", type: "PTR" }])).toHaveLength(0);
   });
 
   it("on a flat network, each interface still only answers questions from its own subnet", async () => {
     const bus = new Bus(true);
     const a = advertiser(bus);
     await started(a, plan(8420));
-    const answers = await ask(bus, "10.10.0.50", [{ name: SERVICE_TYPE, type: "PTR" }]);
-    expect(answers.flatMap((p) => all(p).filter((r) => r.type === "A").map((r) => r.data))).toEqual(["10.10.0.11"]);
+    const answers = await ask(bus, "10.20.0.50", [{ name: SERVICE_TYPE, type: "PTR" }]);
+    expect(answers.flatMap((p) => all(p).filter((r) => r.type === "A").map((r) => r.data))).toEqual(["10.20.0.11"]);
     expect(await ask(bus, "172.16.5.5", [{ name: SERVICE_TYPE, type: "PTR" }])).toHaveLength(0);
   });
 
@@ -218,11 +218,11 @@ describe("responder", () => {
     const bus = new Bus();
     const a = advertiser(bus);
     await started(a, plan(8420));
-    const got = await ask(bus, "10.10.0.50", [{ name: SERVICE_TYPE, type: "PTR" }], 53123);
+    const got = await ask(bus, "10.20.0.50", [{ name: SERVICE_TYPE, type: "PTR" }], 53123);
     expect(got).toHaveLength(1);
     expect(got[0].questions?.[0]?.name).toBe(SERVICE_TYPE);
     expect(Math.max(...all(got[0]).map((r) => r.ttl ?? 0))).toBeLessThanOrEqual(10);
-    expect(bus.responses().at(-1)?.to).toMatchObject({ address: "10.10.0.50", port: 53123 });
+    expect(bus.responses().at(-1)?.to).toMatchObject({ address: "10.20.0.50", port: 53123 });
   });
 
   it("follows a port change: goodbye for the old port, then the new one", async () => {
@@ -234,7 +234,7 @@ describe("responder", () => {
     const goodbyes = bus.responses((p) => all(p).some((r) => r.type === "SRV" && r.ttl === 0));
     expect(goodbyes.length).toBeGreaterThan(0);
     expect((all(goodbyes[0].packet).find((r) => r.type === "SRV")?.data as { port: number }).port).toBe(8420);
-    const answers = await ask(bus, "10.10.0.50", [{ name: SERVICE_TYPE, type: "PTR" }]);
+    const answers = await ask(bus, "10.20.0.50", [{ name: SERVICE_TYPE, type: "PTR" }]);
     expect((all(answers[0]).find((r) => r.type === "SRV")?.data as { port: number }).port).toBe(8430);
     expect(a.status()).toMatchObject({ active: true, port: 8430 });
   });
@@ -257,13 +257,13 @@ describe("responder", () => {
     await a.apply(plan(8420, readyConfig({ allowLan: false })));
     expect(bus.responses((p) => all(p).some((r) => r.ttl === 0)).length).toBeGreaterThan(0);
     expect(a.status()).toMatchObject({ active: false, reason: "LAN access is off (this computer only)" });
-    expect(await ask(bus, "10.10.0.50", [{ name: SERVICE_TYPE, type: "PTR" }])).toHaveLength(0);
+    expect(await ask(bus, "10.20.0.50", [{ name: SERVICE_TYPE, type: "PTR" }])).toHaveLength(0);
     expect(bus.sockets.size).toBe(0); // no socket left open while not advertising
 
     await started(a, plan(8420));
     await a.stop();
     expect(a.status()).toMatchObject({ active: false, reason: "Notflix stopped" });
-    expect(await ask(bus, "10.10.0.50", [{ name: SERVICE_TYPE, type: "PTR" }])).toHaveLength(0);
+    expect(await ask(bus, "10.20.0.50", [{ name: SERVICE_TYPE, type: "PTR" }])).toHaveLength(0);
     expect(bus.sockets.size).toBe(0);
   });
 
@@ -272,12 +272,12 @@ describe("responder", () => {
     const log: string[] = [];
     const first = advertiser(bus);
     await started(first, plan(8420));
-    const second = advertiser(bus, nets(["Ethernet", "10.10.0.12"]), log);
+    const second = advertiser(bus, nets(["Ethernet", "10.20.0.12"]), log);
     await started(second, advertisementPlan(readyConfig(), { host: "0.0.0.0", port: 8519 }, { ...identity, hostname: "OTHER-PC", instanceId: "other" }));
     expect(second.status().name).toBe("Living Room (2)");
     expect(log.join("\n")).toMatch(/already used/);
 
-    const answers = await ask(bus, "10.10.0.50", [{ name: SERVICE_TYPE, type: "PTR" }]);
+    const answers = await ask(bus, "10.20.0.50", [{ name: SERVICE_TYPE, type: "PTR" }]);
     const services = answers.flatMap((p) => all(p).filter((r) => r.type === "SRV")).map((r) => [r.name, (r.data as { port: number }).port]);
     expect(services.sort()).toEqual([
       [`Living Room (2).${SERVICE_TYPE}`, 8519],
@@ -291,8 +291,8 @@ describe("responder", () => {
     await expect(none.apply(plan(8420))).resolves.toBeUndefined();
     expect(none.status()).toMatchObject({ active: false, error: "no network connection with an IPv4 address" });
 
-    bus.failOn.add("10.10.0.11");
-    const failing = advertiser(bus, nets(["Ethernet", "10.10.0.11"]));
+    bus.failOn.add("10.20.0.11");
+    const failing = advertiser(bus, nets(["Ethernet", "10.20.0.11"]));
     await failing.apply(plan(8420));
     expect(failing.status().active).toBe(false);
     expect(failing.status().error).toMatch(/mDNS is unavailable on Ethernet .*EACCES/);
@@ -301,9 +301,9 @@ describe("responder", () => {
   it("browse() lists announced servers the way the launcher's status check sees them", async () => {
     const bus = new Bus();
     await started(advertiser(bus), plan(8420));
-    const found = await browse({ mdns: bus.factory as never, interfaces: [{ name: "Ethernet", address: "10.10.0.11", netmask: "255.255.255.0" }], timeoutMs: 400 });
+    const found = await browse({ mdns: bus.factory as never, interfaces: [{ name: "Ethernet", address: "10.20.0.11", netmask: "255.255.255.0" }], timeoutMs: 400 });
     expect(found).toEqual([
-      expect.objectContaining({ name: "Living Room", port: 8420, addresses: ["10.10.0.11"], via: ["Ethernet"], txt: expect.objectContaining({ id: identity.instanceId }) }),
+      expect.objectContaining({ name: "Living Room", port: 8420, addresses: ["10.20.0.11"], via: ["Ethernet"], txt: expect.objectContaining({ id: identity.instanceId }) }),
     ]);
   });
 });

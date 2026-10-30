@@ -13,6 +13,4 @@ echo Notflix did not restart. Read the messages above.
 if not defined NOTFLIX_NO_PAUSE pause
 exit /b %RC%
 :ok
-echo Notflix keeps running in the background. You can close this window.
-if not defined NOTFLIX_NO_PAUSE timeout /t 20
 exit /b 0

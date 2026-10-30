@@ -163,4 +163,5 @@ move-data --to <folder>              move the data folder (Notflix stopped)
 accounts list
 accounts reset-password <username>   temporary password, signs the account out everywhere
 accounts set-role <username> admin|user
+accounts claim-owner <username>       only when the server has no owner
 ```

@@ -51,7 +51,7 @@ Real-Debrid's OAuth device-code sign-in as an alternative to pasting an API toke
 
 Planned separately (not part of this phase): reconsidering the web stack and merging the web API into
 an ASP.NET Core host next to the engine; an Android TV client that talks only to the Notflix server
-(never to Real-Debrid); a Windows service install for unattended start.
+(never to Real-Debrid; now a separate repository, [notflix-android-tv](https://github.com/jdepew88/notflix-android-tv)); a Windows service install for unattended start.
 
 ## Features removed in this edition
 

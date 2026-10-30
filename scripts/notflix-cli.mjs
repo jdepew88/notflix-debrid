@@ -14,6 +14,7 @@
 //   node scripts/notflix-cli.mjs accounts list
 //   node scripts/notflix-cli.mjs accounts reset-password <username>   prints a temporary password
 //   node scripts/notflix-cli.mjs accounts set-role <username> admin|user
+//   node scripts/notflix-cli.mjs accounts claim-owner <username>   only when the server has no owner
 //   node scripts/notflix-cli.mjs credentials status          how stored credentials are protected (no values)
 //   node scripts/notflix-cli.mjs credentials rotate-key      re-encrypt them under a new key
 //   node scripts/notflix-cli.mjs credentials clear           forget TMDB/Real-Debrid/addon credentials
@@ -90,9 +91,11 @@ async function hashPassword(password) {
   const hash = await scryptAsync(password.normalize("NFKC"), salt, 32, { N, r, p: pp, maxmem: 256 * N * r + 32 * 1024 * 1024 });
   return `scrypt$${N},${r},${pp}$${salt.toString("base64url")}$${hash.toString("base64url")}`;
 }
+// Thrown instead of fail() inside withFileLock: process.exit would skip the lock's release.
+class Refusal extends Error {}
 function findUser(data, name) {
   const user = data.users.find((u) => u.name.toLowerCase() === String(name ?? "").toLowerCase());
-  if (!user) fail(`no account named "${name}"`);
+  if (!user) throw new Refusal(`no account named "${name}"`);
   return user;
 }
 
@@ -124,15 +127,28 @@ async function accounts([sub, name, value]) {
       withFileLock(`${usersFile}.lock`, () => {
         const fresh = readJson(usersFile, { users: [] });
         const user = findUser(fresh, name);
-        if (user.role === "owner") fail("the owner's role cannot be changed");
+        if (user.role === "owner") throw new Refusal("the owner's role cannot be changed");
         user.role = value;
         writeJsonAtomic(usersFile, fresh);
       });
       console.log(`${name} is now ${value === "admin" ? "an administrator" : "a member"}.`);
       return;
     }
+    case "claim-owner": {
+      withFileLock(`${usersFile}.lock`, () => {
+        const fresh = readJson(usersFile, { users: [] });
+        const owner = fresh.users.find((u) => u.role === "owner");
+        if (owner) throw new Refusal(`"${owner.name}" already owns this server`);
+        const user = findUser(fresh, name);
+        fs.copyFileSync(usersFile, `${usersFile}.bak-${Date.now()}`);
+        user.role = "owner";
+        writeJsonAtomic(usersFile, fresh);
+      });
+      console.log(`${name} is now the owner.`);
+      return;
+    }
     default:
-      fail("usage: accounts list | reset-password <name> | set-role <name> admin|user");
+      fail("usage: accounts list | reset-password <name> | set-role <name> admin|user | claim-owner <name>");
   }
 }
 
@@ -331,7 +347,12 @@ switch (command) {
     moveData(flag("--to") ?? rest[0]);
     break;
   case "accounts":
-    await accounts(rest);
+    try {
+      await accounts(rest);
+    } catch (err) {
+      if (err instanceof Refusal) fail(err.message);
+      throw err;
+    }
     break;
   case "credentials":
     credentials(rest);

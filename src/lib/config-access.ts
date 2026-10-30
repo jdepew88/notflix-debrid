@@ -92,7 +92,7 @@ export async function requireConfigAccess(
   opts: { allowBeforeOwner?: boolean } = {}
 ): Promise<ConfigAccess | NextResponse> {
   if (!hasOwner()) {
-    if (serverConfig().setup.completed) return forbidden("This server has no owner. Use the offline recovery tool.", "no_owner");
+    if (serverConfig().setup.completed) return forbidden("This server has no owner. Stop Notflix and run: scripts\\notflix.ps1 accounts claim-owner <username>", "no_owner");
     if (!opts.allowBeforeOwner) return forbidden("Create the owner account first.", "owner_required", 409);
     if (validSetupToken(request.cookies.get(SETUP_COOKIE)?.value)) return { kind: "setup" };
     return forbidden("Enter the setup code first.", "setup_code_required", 401);

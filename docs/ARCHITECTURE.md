@@ -101,6 +101,14 @@ All of the above was generalized or removed as described in this repository's do
 proven playback behaviour (decisions, HLS generations, seeking, throttling, subtitles, source
 switching, diagnostics) was kept and extended.
 
+## Android TV client
+
+The TV app lives in its own repository, [notflix-android-tv](https://github.com/jdepew88/notflix-android-tv).
+It uses the same HTTP API as the website, finds servers through `_notflix._tcp` ([LAN-DISCOVERY.md](LAN-DISCOVERY.md)),
+verifies them with `GET /api/health`, and signs in with the server's own accounts. It never talks to
+Real-Debrid, TMDB or the media engine directly. That health response and the announcement are the
+contract between the two repositories; `api` in both is bumped on breaking changes.
+
 ## Tests
 
 | Suite | Command | Covers |

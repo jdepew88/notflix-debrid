@@ -10,6 +10,9 @@
   stop      Stop both (gracefully, then forcefully after a timeout). -All also stops servers started
             from this folder with other data folders.
   restart   stop + start.
+  refresh   Advanced: stop, rebuild from the files in this folder, start. Data and settings are kept.
+  redeploy  Advanced: git pull --ff-only (Git installs only), then refresh.
+  shortcut  Put a "Start Notflix" shortcut for this installation on the Desktop.
   status    Processes, health, addresses, data folder, LAN discovery (checked live on the network).
   discover  List the Notflix servers announced on the local network (mDNS/DNS-SD).
 
@@ -20,7 +23,8 @@
   test      Run the unit test suites (engine + web). -Integration adds a fresh-install run with real
             FFmpeg/hardware on throwaway data; -Browser adds the Playwright suite.
   move-data Move accounts/settings/credentials to another folder (-To <folder>; Notflix stopped).
-  accounts  Offline account recovery: list | reset-password <name> | set-role <name> admin|user
+  accounts  Offline account recovery: list | reset-password <name> | set-role <name> admin|user |
+            claim-owner <name> (only when the server has no owner)
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\notflix.ps1 setup
@@ -31,7 +35,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Position = 0)]
-  [ValidateSet("setup", "start", "stop", "restart", "status", "discover", "logs", "test", "move-data", "accounts")]
+  [ValidateSet("setup", "start", "stop", "restart", "refresh", "redeploy", "shortcut", "status", "discover", "logs", "test", "move-data", "accounts")]
   [string]$Command = "status",
   # Use the Next.js development server (live reload) instead of the production build.
   [switch]$Dev,
@@ -568,6 +572,31 @@ function Invoke-Start {
   if (-not $NoBrowser) { Open-Browser $url }
 }
 
+# The Desktop shortcut starts this installation; nothing about the user or the folder is hardcoded.
+function New-DesktopShortcut {
+  # Test seam: NOTFLIX_DESKTOP_DIR replaces the real Desktop (scripts\test-windows-launcher.mjs).
+  $desktop = if ($env:NOTFLIX_DESKTOP_DIR) { $env:NOTFLIX_DESKTOP_DIR } else { [Environment]::GetFolderPath("Desktop") }
+  $path = Join-Path $desktop "Start Notflix.lnk"
+  $shell = New-Object -ComObject WScript.Shell
+  $link = $shell.CreateShortcut($path)
+  $target = Join-Path $Root "Start-Notflix.cmd"
+  if ((Test-Path -LiteralPath $path) -and $link.TargetPath -and ($link.TargetPath -ne $target)) { Write-Warn2 "Replacing a shortcut that started $($link.TargetPath)" }
+  $link.TargetPath = $target
+  $link.WorkingDirectory = $Root
+  $link.IconLocation = (Join-Path $Root "public\brand\notflix.ico")
+  $link.Description = "Start Notflix Debrid and open it in your browser"
+  $link.Save()
+  Write-Ok "Shortcut created: $path"
+}
+
+# Git installs only. Checked first, so a failed pull leaves Notflix running as it was.
+function Invoke-Pull {
+  if (-not (Test-Path -LiteralPath (Join-Path $Root ".git"))) { throw "This folder is not a Git clone. Download the new ZIP and copy it over this folder (see docs\INSTALL-WINDOWS.md), then run: scripts\notflix.ps1 refresh" }
+  Write-Step "Updating from GitHub"
+  & git -C $Root pull --ff-only
+  if ($LASTEXITCODE -ne 0) { throw "git pull could not update this folder. Nothing was changed or stopped." }
+}
+
 function Invoke-Stop {
   # paths, not init: stopping must work even when the data folder has become unavailable.
   $loc = Get-DataLocation
@@ -727,6 +756,9 @@ try {
     "start" { Invoke-Start }
     "stop" { Invoke-Stop }
     "restart" { Invoke-Stop; Invoke-Start }
+    "refresh" { Invoke-Stop; Invoke-Setup; Invoke-Start }
+    "redeploy" { Invoke-Pull; Invoke-Stop; Invoke-Setup; Invoke-Start }
+    "shortcut" { New-DesktopShortcut }
     "status" { Show-Status -Live }
     "discover" { & node $Cli discover @Rest; exit $LASTEXITCODE }
     "logs" {
@@ -742,5 +774,11 @@ try {
   }
 } catch {
   Write-Fail $_.Exception.Message
+  # Double-clicked windows close eventually; keep the reason where it can be found afterwards.
+  try {
+    $logDir = Join-Path $env:LOCALAPPDATA "NotflixDebrid"
+    New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+    Add-Content -LiteralPath (Join-Path $logDir "launcher.log") -Value "$(Get-Date -Format s) [$Command] $Root : $($_.Exception.Message)"
+  } catch { }
   exit 1
 }

@@ -79,7 +79,23 @@ The launcher:
   setup is finished, and on the **sign-in page** from then on;
 - does nothing new if Notflix is already running (it just opens the browser again).
 
-You can close the window afterwards; Notflix keeps running in the background until you stop it.
+The window closes by itself once Notflix is running; Notflix keeps running in the background until
+you stop it. If the start fails, the window stays open with the reason, which is also saved in
+`%LOCALAPPDATA%\NotflixDebrid\launcher.log`. Normal starts never rebuild or reinitialize anything and
+don't need administrator rights: the installation folder, data folder, accounts, credentials, ports,
+cache and network settings are all reused.
+
+### The Desktop shortcut
+
+Setup offers to create **Start Notflix** on your Desktop. It points at this folder's
+`Start-Notflix.cmd`, so it follows no fixed path or user name. Create or re-point it at any time
+(for example after moving the folder):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\notflix.ps1 shortcut
+```
+
+`Setup-Notflix.cmd -Shortcut` creates it without asking and `-NoShortcut` never asks.
 
 Then follow the setup wizard: [ONBOARDING.md](ONBOARDING.md). You'll need your TMDB key from
 <https://www.themoviedb.org/settings/api> and your Real-Debrid token from
@@ -140,6 +156,16 @@ Details, firewall and router requirements: [LAN-DISCOVERY.md](LAN-DISCOVERY.md).
 
 To start Notflix when you sign in, put a shortcut to `Start-Notflix.cmd` in `shell:startup`
 (press Win+R, type `shell:startup`).
+
+### Advanced: refresh and redeploy
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\notflix.ps1 refresh    # stop, rebuild this folder, start
+powershell -ExecutionPolicy Bypass -File scripts\notflix.ps1 redeploy   # git pull --ff-only, then refresh
+```
+
+Both keep your data folder, accounts and credentials. `redeploy` needs a Git clone; if the pull
+fails, nothing is stopped or changed.
 
 ## Updating
 

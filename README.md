@@ -25,21 +25,36 @@ device can't play directly — using whatever graphics hardware you have, or non
 - **Private by default**: listens on `127.0.0.1` until you allow your local network; credentials stay
   on the server and are never sent to browsers, phones or TVs.
 
+### Watch Notflix on Android TV
+
+Want Notflix on your TV? Download the companion Android TV app:
+
+**<https://github.com/jdepew88/notflix-android-tv>**
+
+The app connects to your Notflix Debrid server, discovers compatible servers automatically using
+mDNS, and also supports manually entering the server address. It is only a client: this server must
+be installed and running separately, with **LAN access** on and **Let TVs find this server
+automatically** enabled (Settings → Server & storage). See the app's README for what has been tested.
+
 ## Quick start (Windows)
 
 1. **Download** — on GitHub click **Code → Download ZIP**, then extract it (any folder; spaces are fine).
 2. **Double-click `Setup-Notflix.cmd`** — it checks for Node.js, the .NET 10 SDK and FFmpeg, offers to
-   install anything missing with WinGet (it asks first), and builds Notflix.
-3. **Double-click `Start-Notflix.cmd`** — Notflix starts and your browser opens the setup wizard.
+   install anything missing with WinGet (it asks first), builds Notflix, and offers to put a
+   **Start Notflix** shortcut on your Desktop.
+3. **Double-click Start Notflix** (or `Start-Notflix.cmd`) — Notflix starts, your browser opens the
+   setup wizard, and the launcher window closes. Notflix keeps running in the background.
 4. In the wizard, create your username and password, then paste your two keys. The wizard has a
    button for each official page:
    - TMDB API key: <https://www.themoviedb.org/settings/api>
    - Real-Debrid API token: <https://real-debrid.com/apitoken>
 5. The wizard tests your graphics card automatically. Press **Finish setup** and start browsing.
 
-`Stop-Notflix.cmd` stops it; `Start-Notflix.cmd` starts it again (straight to the sign-in page
-once setup is done); `Restart-Notflix.cmd` and `Status-Notflix.cmd` do what they say. No `.env`
-files to edit and no commands to type.
+From then on, double-click **Start Notflix** to start it, or to reopen the website if it is already
+running; it never rebuilds or starts a second copy. `Stop-Notflix.cmd` stops it, and
+`Restart-Notflix.cmd` and `Status-Notflix.cmd` do what they say. If a start fails, the window stays
+open with the reason, which is also saved in `%LOCALAPPDATA%\NotflixDebrid\launcher.log`. No `.env`
+files to edit, no administrator rights and no commands to type.
 
 **With Git instead of the ZIP:** `git clone https://github.com/jdepew88/notflix-debrid.git`, then the
 same double-clicks. Git is optional and only makes updating easier.
@@ -71,6 +86,7 @@ the wizard step by step: [docs/ONBOARDING.md](docs/ONBOARDING.md).
 | [HARDWARE-ACCELERATION.md](docs/HARDWARE-ACCELERATION.md) | GPU support, how it is tested, fallbacks |
 | [SECURITY.md](docs/SECURITY.md) | Credentials, accounts, network exposure, threat model |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Web app, API, media engine and their contracts; tests |
+| [RELEASING.md](docs/RELEASING.md) | Test suites, what needs live credentials, publishing a release |
 | [ROADMAP.md](docs/ROADMAP.md) | Linux, macOS, Docker, more debrid providers |
 
 ## Project layout
@@ -90,6 +106,8 @@ scripts/notflix-cli.mjs    offline maintenance (paths, port, move data, account 
 ```
 
 ## License and trademarks
+
+No license has been chosen yet, so no rights beyond GitHub's terms are granted for now.
 
 Notflix is an independent project and is not affiliated with Netflix, TMDB or Real-Debrid. This
 product uses the TMDB API but is not endorsed or certified by TMDB.

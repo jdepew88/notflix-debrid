@@ -14,6 +14,6 @@ echo Setup did not finish. Read the messages above, fix the problem, and double-
 if not defined NOTFLIX_NO_PAUSE pause
 exit /b %RC%
 :ok
-echo Setup finished. Next: double-click Start-Notflix.cmd
+echo Setup finished. Next: double-click Start Notflix on your Desktop, or Start-Notflix.cmd in this folder
 if not defined NOTFLIX_NO_PAUSE pause
 exit /b 0

@@ -9,6 +9,7 @@
   3. Offers to install what is missing or too old with WinGet, using the package ids in
      requirements.winget, and asks before installing anything.
   4. Builds Notflix with the existing launcher command (scripts\notflix.ps1 setup).
+  5. Offers to put a "Start Notflix" shortcut on the Desktop.
   Safe to run again: installed tools are left alone and unchanged packages are not reinstalled.
 
   Nothing is downloaded except through WinGet from its official "winget" source. The execution
@@ -22,12 +23,20 @@
 
 .PARAMETER SkipBuild
   Check and install prerequisites only.
+
+.PARAMETER Shortcut
+  Create the Desktop shortcut without asking.
+
+.PARAMETER NoShortcut
+  Don't create the Desktop shortcut and don't ask.
 #>
 [CmdletBinding()]
 param(
   [switch]$Yes,
   [switch]$DryRun,
-  [switch]$SkipBuild
+  [switch]$SkipBuild,
+  [switch]$Shortcut,
+  [switch]$NoShortcut
 )
 
 $ErrorActionPreference = "Stop"
@@ -292,6 +301,19 @@ otflix-cli.mjs") status 2>$null) | ConvertFrom-Json
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   Write-Host ""
   Write-Ok "Notflix Debrid is installed. Double-click Start-Notflix.cmd to start it."
+  # Test seam: NOTFLIX_SETUP_PROMPT=1 asks even though the answer is piped in (test-windows-launcher.mjs).
+  $canAsk = (-not [Console]::IsInputRedirected) -or $env:NOTFLIX_SETUP_PROMPT
+  $wantShortcut = $Shortcut
+  if (-not $Shortcut -and -not $NoShortcut -and $canAsk -and -not $Yes) {
+    Write-Host ""
+    Write-Host '  Create a "Start Notflix" shortcut on your Desktop? [Y/N] ' -NoNewline
+    $answer = [Console]::ReadLine()
+    $wantShortcut = $answer -match '^\s*(y|yes)?\s*$' -and $null -ne $answer
+  }
+  if ($wantShortcut) {
+    & (Join-Path $Root "scripts\notflix.ps1") shortcut
+    if ($LASTEXITCODE -ne 0) { Write-Warn2 "The shortcut could not be created. Notflix still works: double-click Start-Notflix.cmd." }
+  }
   exit 0
 } catch {
   Write-Fail $_.Exception.Message
