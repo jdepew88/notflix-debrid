@@ -4,10 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Bell, ChevronDown, Settings, Users, UserCog, LogOut, Pencil } from "lucide-react";
+import { Search, ChevronDown, Settings, Users, UserCog, LogOut, Pencil } from "lucide-react";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { ProfileAvatar } from "@/components/profile/ProfileAvatar";
 import { NotflixWordmark } from "@/components/brand/Logo";
 import { leaveProfile } from "@/lib/profile-client";
+import { disableBrowserNotifications } from "@/lib/notifications/browser";
 import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/cn";
 import { GENRES, NAV_GENRE_SLUGS, genreHref } from "@/lib/genres";
@@ -62,6 +64,8 @@ export function Navbar() {
   }, []);
 
   const handleSignOut = async () => {
+    // This browser stops receiving the account's pop-ups once signed out.
+    await disableBrowserNotifications();
     await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
     logoutLocal();
     window.location.href = "/";
@@ -132,9 +136,7 @@ export function Navbar() {
           <Link href="/browse/search" className="text-white hover:text-netflix-light-gray">
             <Search className="h-5 w-5" />
           </Link>
-          <button type="button" className="hidden text-white hover:text-netflix-light-gray sm:block">
-            <Bell className="h-5 w-5" />
-          </button>
+          <NotificationBell />
           <Link href="/settings" className="hidden text-white hover:text-netflix-light-gray md:block">
             <Settings className="h-5 w-5" />
           </Link>

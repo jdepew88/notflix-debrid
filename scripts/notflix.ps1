@@ -151,7 +151,8 @@ function Get-NotflixProcesses {
   # Same files reached through another spelling (8.3 short name, junction): compare real paths.
   $unsure = @($found | Where-Object { -not $_.Mine })
   if ($unsure.Count -gt 0) {
-    $real = @((Invoke-Cli (@("canonical-paths") + @($unsure | ForEach-Object { $_.Script }))) | ConvertFrom-Json)
+    # ForEach-Object unrolls the JSON array (Windows PowerShell emits it as one object).
+    $real = @((Invoke-Cli (@("canonical-paths") + @($unsure | ForEach-Object { $_.Script }))) | ConvertFrom-Json | ForEach-Object { $_ })
     for ($n = 0; $n -lt $unsure.Count; $n++) {
       $unsure[$n].Mine = Test-SamePath $real[$n] $(if ($unsure[$n].Kind -eq "web") { $WebScript } else { $EngineDll })
     }
@@ -635,7 +636,9 @@ function Show-Discovery($s, [bool]$webUp, [switch]$Live) {
   if ($a.active) {
     Write-Ok "LAN discovery  announced as `"$($a.name)`" ($($a.serviceType -replace '\.local$', ''), port $($a.port), $($a.addresses -join ', '))"
     if ($Live) {
-      $found = @((Invoke-Cli @("discover", "--json", "--timeout", "2000")) | ConvertFrom-Json)
+      # Windows PowerShell emits a JSON array as one object; ForEach-Object unrolls it so each server
+      # is compared on its own (otherwise every server's port counted as this installation's).
+      $found = @((Invoke-Cli @("discover", "--json", "--timeout", "2000")) | ConvertFrom-Json | ForEach-Object { $_ })
       $mine = @($found | Where-Object { $_.txt.id -eq $s.instanceId })
       $ports = @($mine | ForEach-Object { $_.port } | Select-Object -Unique)
       if ($mine.Count -eq 0) { Write-Warn2 "LAN discovery  no answer to a test query on this computer (multicast blocked? see docs/LAN-DISCOVERY.md)" }

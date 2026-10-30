@@ -36,6 +36,19 @@ const nextConfig: NextConfig = {
   experimental: {
     isrFlushToDisk: false,
   },
+  // The notification service worker must never be served stale (browsers check it for updates).
+  async headers() {
+    return [
+      {
+        source: "/notflix-sw.js",
+        headers: [
+          { key: "Content-Type", value: "application/javascript; charset=utf-8" },
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self'; img-src 'self' https://image.tmdb.org" },
+        ],
+      },
+    ];
+  },
   images: {
     // Optimized TMDB artwork is disposable; cap it instead of Next's default of half the free disk.
     maximumDiskCacheSize: 512 * 1024 * 1024,

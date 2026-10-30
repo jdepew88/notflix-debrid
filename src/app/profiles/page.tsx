@@ -6,6 +6,7 @@ import { Check, Lock, Pencil, Plus } from "lucide-react";
 import { BrandLoader, NotflixWordmark } from "@/components/brand/Logo";
 import { useAppStore } from "@/lib/store";
 import { selectProfile } from "@/lib/profile-client";
+import { disableBrowserNotifications } from "@/lib/notifications/browser";
 import { ProfileAvatar } from "@/components/profile/ProfileAvatar";
 import { ProfileEditor } from "@/components/profile/ProfileEditor";
 import { PinDialog } from "@/components/profile/PinDialog";
@@ -124,6 +125,7 @@ function ProfilesScreen() {
           <button
             type="button"
             onClick={async () => {
+              await disableBrowserNotifications();
               await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
               useAppStore.getState().logoutLocal();
               window.location.href = "/";

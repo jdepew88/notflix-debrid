@@ -19,6 +19,8 @@ import { KeyUnavailableError, defaultProtection, protectionLabel, rememberKey, u
  * @property {string} tmdbApiKey     TMDB v3 API key or v4 read access token
  * @property {string} realDebridToken
  * @property {string} customSourceUrl  optional Stremio-compatible addon URL (may embed a token)
+ * @property {string} vapidPublicKey   Web Push (VAPID) public key, base64url; generated on first use
+ * @property {string} vapidPrivateKey  Web Push (VAPID) private key, base64url; never leaves the server
  */
 
 /**
@@ -30,7 +32,7 @@ import { KeyUnavailableError, defaultProtection, protectionLabel, rememberKey, u
  */
 
 const FORMAT = "notflix-secrets/2";
-const SECRET_KEYS = /** @type {const} */ (["sessionSecret", "tmdbApiKey", "realDebridToken", "customSourceUrl"]);
+const SECRET_KEYS = /** @type {const} */ (["sessionSecret", "tmdbApiKey", "realDebridToken", "customSourceUrl", "vapidPublicKey", "vapidPrivateKey"]);
 
 /** @returns {string} */
 export function randomSecret(bytes = 36) {

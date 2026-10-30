@@ -7,6 +7,7 @@ import { DetailModalProvider } from "@/providers/DetailModalProvider";
 import { TitleContextMenuProvider } from "@/providers/TitleContextMenuProvider";
 import { TitleCardPortal } from "@/components/browse/TitleCardPortal";
 import { DetailModal } from "@/components/browse/DetailModal";
+import { NotificationsProvider } from "@/components/notifications/NotificationsProvider";
 import { useAppStore } from "@/lib/store";
 
 function AppHydrator() {
@@ -77,9 +78,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <DetailModalProvider>
         <TitleContextMenuProvider>
           <AppHydrator />
-          {children}
-          <TitleCardPortal />
-          <DetailModal />
+          <NotificationsProvider>
+            {children}
+            <TitleCardPortal />
+            <DetailModal />
+          </NotificationsProvider>
         </TitleContextMenuProvider>
       </DetailModalProvider>
     </PortalProvider>

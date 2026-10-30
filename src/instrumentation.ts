@@ -13,4 +13,12 @@ export async function register() {
   } catch (err) {
     console.error("[notflix] Startup initialization failed:", err);
   }
+
+  // Notification checks run in the background, starting a while after startup.
+  try {
+    const { startNotifications } = await import("@/lib/notifications/server");
+    startNotifications();
+  } catch (err) {
+    console.error("[notflix] Notification checks could not start:", err);
+  }
 }

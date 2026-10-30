@@ -101,6 +101,12 @@ cache and data folder. **Finish setup** is enabled when everything required work
 
 Anything missing has a **Fix** link to its step. After finishing you land on **Who's watching?**.
 
+## After setup: notifications
+
+Each profile's bell lists new episodes and seasons of the series it follows, releases of films in
+its My List, and occasional suggestions. Browser pop-ups are off until a profile enables them in
+**Settings → Notifications**; see [NOTIFICATIONS.md](NOTIFICATIONS.md).
+
 ## Changing things later
 
 As the owner: **Settings → System → Run the setup wizard again**. It is the same wizard without the

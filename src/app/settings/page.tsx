@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { ProfilePreferencesPanel } from "@/components/settings/ProfilePreferencesPanel";
+import { NotificationSettingsPanel } from "@/components/settings/NotificationSettingsPanel";
 import { AccountPanel } from "@/components/settings/AccountPanel";
 import { AccountsAdminPanel } from "@/components/settings/AccountsAdminPanel";
 import { DebridPanel, HardwarePanel, MetadataPanel, ServerPanel, SummaryList, type InstallSummary } from "@/components/setup/ConfigPanels";
@@ -165,6 +166,7 @@ export default function SettingsPage() {
       <div className="mx-auto max-w-3xl space-y-8">
         <AccountPanel />
         <ProfilePreferencesPanel />
+        <NotificationSettingsPanel />
 
         {canManage === false && !isAdmin && (
           <section className="rounded border border-white/10 p-6 text-sm text-netflix-light-gray" data-testid="server-settings-locked">
